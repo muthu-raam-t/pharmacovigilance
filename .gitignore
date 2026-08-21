@@ -1,0 +1,51 @@
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python caches & runtime artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.ipynb_checkpoints/
+
+# Environment variables & secrets
+.env
+*.env
+
+# Large datasets & data directories
+data/
+datasets/
+raw/
+processed/
+id_mapping/
+*.csv
+*.tsv
+*.jsonl
+*.parquet
+
+# Model checkpoints & heavy weights
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+checkpoints/
+models/
+saved_models/
+runs/
+logs/
+
+# Database dumps & local storage
+*.db
+*.sqlite3
+pgdata/
+neo4j_data/
+
+# IDE & OS-specific files
+.vscode/
+.idea/
+.DS_Store
+*.swp
