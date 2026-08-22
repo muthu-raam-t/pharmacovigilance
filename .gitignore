@@ -33,7 +33,6 @@ id_mapping/
 *.onnx
 *.safetensors
 checkpoints/
-models/
 saved_models/
 runs/
 logs/
@@ -43,9 +42,3 @@ logs/
 *.sqlite3
 pgdata/
 neo4j_data/
-
-# IDE & OS-specific files
-.vscode/
-.idea/
-.DS_Store
-*.swp

@@ -5,13 +5,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: text_analytics_nlp
-    shm_size: '2gb'                  # PREVENTS PyTorch DataLoader crash
+    shm_size: '2gb'
     volumes:
-      - .:/workspace                 # Syncs current project folder
-      - hf_cache:/root/.cache/huggingface  # Persists downloaded HF models
+      - .:/workspace
+      - hf_cache:/root/.cache/huggingface
     ports:
-      - "8000:8000"                  # FastAPI API endpoint
-      - "8888:8888"                  # JupyterLab
+      - "8000:8000"
+      - "8888:8888"
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
     deploy:
@@ -22,9 +22,12 @@ services:
               count: all
               capabilities: [gpu]
     depends_on:
-      - postgres
-      - neo4j
-      - redis
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     stdin_open: true
     tty: true
 
@@ -40,6 +43,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drug_user -d drug_safety_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # 3. Graph Database for Drug-Adverse Reaction Relationships
   neo4j:
@@ -48,10 +57,16 @@ services:
     environment:
       NEO4J_AUTH: neo4j/drugsafety123
     ports:
-      - "7474:7474"                  # Neo4j Browser UI
-      - "7687:7687"                  # Bolt connection
+      - "7474:7474"
+      - "7687:7687"
     volumes:
       - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p drugsafety123 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # 4. In-memory cache
   redis:
@@ -59,8 +74,14 @@ services:
     container_name: text_analytics_redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   postgres_data:
   neo4j_data:
-  hf_cache:                          # Named volume for HuggingFace downloads
+  hf_cache:
