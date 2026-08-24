@@ -30,6 +30,17 @@ def normalize_record(record):
         ent["type"] = LABEL_MAP.get(ent["type"], ent["type"])
     for rel in record["relations"]:
         rel["type"] = RELATION_MAP.get(rel["type"], rel["type"])
+
+    new_tags = []
+    for tag in record["ner_tags"]:
+        if tag == "O":
+            new_tags.append(tag)
+        else:
+            prefix, raw_type = tag.split("-", 1)
+            mapped_type = LABEL_MAP.get(raw_type, raw_type)
+            new_tags.append(f"{prefix}-{mapped_type}")
+    record["ner_tags"] = new_tags
+
     return record
 
 def load_jsonl(path):
