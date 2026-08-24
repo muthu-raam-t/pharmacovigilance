@@ -31,6 +31,7 @@ RUN pip install --no-cache-dir \
     python-multipart \
     jupyterlab \
     ipywidgets
+    pytorch-crf
 
 EXPOSE 8000 8888
 CMD ["/bin/bash"]
