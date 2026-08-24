@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
-    transformers \
+    transformers==4.44.2 \
     datasets \
     seqeval \
     scikit-learn \
