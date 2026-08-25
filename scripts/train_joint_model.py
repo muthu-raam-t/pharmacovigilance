@@ -66,7 +66,11 @@ def main():
     num_re_labels = len(label_maps["re_label2id"])
     print(f"NER labels: {num_ner_labels}, RE labels: {num_re_labels}")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.backbone)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(args.backbone, add_prefix_space=True)
+    except TypeError:
+        tokenizer = AutoTokenizer.from_pretrained(args.backbone)
+
 
     train_dataset = JointNERREDataset(args.train_path, tokenizer, label_maps, args.max_length, args.max_pairs)
     val_dataset = JointNERREDataset(args.val_path, tokenizer, label_maps, args.max_length, args.max_pairs)
