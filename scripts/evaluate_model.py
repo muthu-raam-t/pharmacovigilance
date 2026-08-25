@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from seqeval.metrics import precision_score, recall_score, f1_score as seq_f1_score
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
 sys.path.append("/workspace")
 from models.joint_model import JointNERREModel
@@ -59,12 +59,17 @@ def evaluate(model, dataloader, device, id2ner, id2re):
         re_precision, re_recall, re_f1, _ = precision_recall_fscore_support(
             true_re_labels, pred_re_labels, average="weighted", zero_division=0
         )
+        re_accuracy = accuracy_score(true_re_labels, pred_re_labels)
     else:
-        re_precision = re_recall = re_f1 = 0.0
+        re_precision = re_recall = re_f1 = re_accuracy = 0.0
+
+    flat_true_ner = [tag for seq in true_ner_seqs for tag in seq]
+    flat_pred_ner = [tag for seq in pred_ner_seqs for tag in seq]
+    ner_accuracy = accuracy_score(flat_true_ner, flat_pred_ner)
 
     return {
-        "ner_precision": ner_precision, "ner_recall": ner_recall, "ner_f1": ner_f1,
-        "re_precision": re_precision, "re_recall": re_recall, "re_f1": re_f1
+        "ner_accuracy": ner_accuracy, "ner_precision": ner_precision, "ner_recall": ner_recall, "ner_f1": ner_f1,
+        "re_accuracy": re_accuracy, "re_precision": re_precision, "re_recall": re_recall, "re_f1": re_f1
     }
 
 
@@ -106,19 +111,20 @@ def main():
     results = evaluate(model, test_loader, device, id2ner, id2re)
 
     print(f"\n=== {args.model_name} — Test Set Results ===")
-    print(f"NER  — Precision: {results['ner_precision']:.3f}  Recall: {results['ner_recall']:.3f}  F1: {results['ner_f1']:.3f}")
-    print(f"RE   — Precision: {results['re_precision']:.3f}  Recall: {results['re_recall']:.3f}  F1: {results['re_f1']:.3f}")
+    print(f"NER  — Accuracy: {results['ner_accuracy']:.3f}  Precision: {results['ner_precision']:.3f}  Recall: {results['ner_recall']:.3f}  F1: {results['ner_f1']:.3f}")
+    print(f"RE   — Accuracy: {results['re_accuracy']:.3f}  Precision: {results['re_precision']:.3f}  Recall: {results['re_recall']:.3f}  F1: {results['re_f1']:.3f}")
 
     file_exists = os.path.isfile(args.output_csv)
     with open(args.output_csv, "a", newline="") as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow(["model_name", "ner_precision", "ner_recall", "ner_f1", "re_precision", "re_recall", "re_f1"])
+            writer.writerow(["model_name", "ner_accuracy", "ner_precision", "ner_recall", "ner_f1", "re_accuracy", "re_precision", "re_recall", "re_f1"])
         writer.writerow([
             args.model_name,
-            f"{results['ner_precision']:.4f}", f"{results['ner_recall']:.4f}", f"{results['ner_f1']:.4f}",
-            f"{results['re_precision']:.4f}", f"{results['re_recall']:.4f}", f"{results['re_f1']:.4f}"
+            f"{results['ner_accuracy']:.4f}", f"{results['ner_precision']:.4f}", f"{results['ner_recall']:.4f}", f"{results['ner_f1']:.4f}",
+            f"{results['re_accuracy']:.4f}", f"{results['re_precision']:.4f}", f"{results['re_recall']:.4f}", f"{results['re_f1']:.4f}"
         ])
+
     print(f"\nAppended to {args.output_csv}")
 
 
