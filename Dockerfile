@@ -1,6 +1,7 @@
 FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV HF_HUB_OFFLINE=1
 WORKDIR /workspace
 
 RUN apt-get update && apt-get install -y \
@@ -30,8 +31,9 @@ RUN pip install --no-cache-dir \
     redis \
     python-multipart \
     jupyterlab \
-    ipywidgets
-    pytorch-crf
+    ipywidgets \
+    pytorch-crf \
+    matplotlib
 
 EXPOSE 8000 8888
 CMD ["/bin/bash"]
