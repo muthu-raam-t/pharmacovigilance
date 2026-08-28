@@ -37,22 +37,46 @@ changes between runs.
   on PubMed and PMC full-text articles, combining general language
   understanding with biomedical specialization.
 
-## Results
+## Experimental Results & Benchmark Analysis
 
-Evaluated on an identical held-out test set, same architecture, same training
-configuration (3 epochs, batch size 8) across all 5 models.
+### 1. Named Entity Recognition (NER)
 
-![Model comparison table](data/processed/metrics_images/all_models_comparison_table.png)
+<p align="center">
+  <img src="comparison_table_ner.png" alt="NER Benchmark Results" width="700"/>
+</p>
 
-## Completed so far
+* **Top Performer:** **PubMedBERT** achieved the highest overall performance with an **F1 score of 0.829**, an **Accuracy of 95.5%**, and the highest **Precision at 85.5%**, demonstrating superior domain adaptation on biomedical entity boundaries.
+* **Domain-Specific Advantage:** Specialized biomedical models (**PubMedBERT**, **SciBERT**, and **BioBERT**) consistently outperformed general-purpose transformers (**BERT-base** at 0.780 F1 and **RoBERTa** at 0.784 F1).
+* **Recall vs. Precision:** **BioBERT** achieved the highest overall recall (**84.9%**), making it effective for minimizing false negatives in medical entity extraction, whereas **PubMedBERT** maintained the cleanest signal-to-noise ratio.
 
-- Unified preprocessing pipeline merging three biomedical text corpora
-  (BC5CDR, BioRED, ADE Corpus) into one consistent schema with normalized
-  entity and relation labels.
-- Structured knowledge base (SIDER, OnSIDES) loaded into PostgreSQL.
-- Classical TF-IDF + Linear SVM baseline, used to validate dataset quality
-  before transformer training.
-- Shared joint NER+RE model architecture, reusable across any transformer
-  backbone.
-- All 5 comparison models (BERT-base, RoBERTa, SciBERT, PubMedBERT, BioBERT)
-  trained and evaluated on the held-out test set, with results visualized.
+---
+
+### 2. Relation Extraction (RE)
+
+<p align="center">
+  <img src="comparison_table_re.png" alt="Relation Extraction Benchmark Results" width="700"/>
+</p>
+
+* **Top Performer:** **SciBERT** demonstrated the best overall relation extraction capability, leading across all metrics with an **F1 score of 0.952**, **Precision of 96.2%**, **Recall of 96.0%**, and **Accuracy of 96.0%**.
+* **Model Comparison:** **BioBERT** also delivered strong performance with a **0.933 F1 score**, outperforming the general **BERT-base** (**0.929**) and **RoBERTa** (**0.927**).
+* **Scientific Corpus Generalization:** The scientific domain pre-training of **SciBERT** proved significantly more effective for semantic relationship mapping between extracted entities compared to PubMedBERT (0.886 F1) in this benchmark.
+
+---
+
+## Completed So Far
+
+- Unified preprocessing pipeline merging three biomedical text corpora (BC5CDR, BioRED, ADE Corpus) into a standardized schema with normalized entity and relation labels.
+- Classical TF-IDF + Linear SVM baseline implemented to benchmark dataset quality prior to deep learning experiments.
+- Shared joint NER + RE model architecture developed for modular evaluation across transformer backbones.
+- Completed training and evaluation of all 5 comparative transformer architectures (BERT-base, RoBERTa, SciBERT, PubMedBERT, BioBERT) on the held-out test set:
+  - **Named Entity Recognition (NER):** **PubMedBERT** achieved the top performance (**0.829 F1**, **0.855 Precision**), with **BioBERT** providing maximum entity sensitivity (**0.849 Recall**).
+  - **Relation Extraction (RE):** **SciBERT** achieved the leading performance across all metrics (**0.952 F1**, **0.962 Precision**, **0.960 Recall**).
+- Generated and documented comparative evaluation tables and benchmark visualizations.
+
+---
+
+## Next Steps / Upcoming Work
+
+- **Knowledge Base Creation:** Build a PostgreSQL database to store structured biomedical entity and relation data.
+- **Knowledge Graph Construction:** Implement a Neo4j graph database to detect entity overlaps and serve as the ground truth reference for drug-disease-side effect relationships.
+- **UI & FastAPI Development:** Build an interactive user interface connected via FastAPI to query drugs for their side effects, or search diseases to retrieve indicated drugs along with their side effects.
