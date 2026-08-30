@@ -123,6 +123,17 @@ RETURN d.name, s.name LIMIT 10
 
 ## Next Steps / Upcoming Work
 
-- **Knowledge Base Creation:** Build a PostgreSQL database to store structured biomedical entity and relation data.
-- **Knowledge Graph Construction:** Implement a Neo4j graph database to detect entity overlaps and serve as the ground truth reference for drug-disease-side effect relationships.
-- **UI & FastAPI Development:** Build an interactive user interface connected via FastAPI to query drugs for their side effects, or search diseases to retrieve indicated drugs along with their side effects.
+- **Evidence fusion & ranking engine** — query the knowledge graph
+  programmatically, combine graph evidence with SIDER frequency data into
+  weighted effectiveness/severity scores, and implement alternative-drug
+  suggestion logic via multi-hop graph search.
+- **Explainable AI module** — evidence-sentence highlighting from model
+  predictions, score decomposition per recommendation, and natural-language
+  explanation generation.
+- **Backend API (FastAPI)** — `/predict/disease` and `/predict/drug`
+  endpoints wiring together the model, knowledge graph, ranking engine, and
+  explainability layer.
+- **Frontend (Next.js)** — advisory interface with a welcome screen, disease
+  lookup page, and drug lookup page, connected to the backend API.
+- **Integration & final testing** — end-to-end verification of both lookup
+  flows, finalized Docker Compose setup, and final project documentation.
