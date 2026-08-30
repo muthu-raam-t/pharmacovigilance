@@ -11,7 +11,7 @@ services:
       - hf_cache:/root/.cache/huggingface
     ports:
       - "8000:8000"
-      - "8888:8888"
+#      - "8888:8888"
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
     deploy:
