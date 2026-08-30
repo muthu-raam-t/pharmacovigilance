@@ -63,6 +63,51 @@ changes between runs.
 
 ---
 
+## Knowledge Graph (Neo4j)
+
+Structured drug-side-effect data from SIDER was migrated from PostgreSQL into
+a Neo4j graph database, enabling fast multi-hop relationship queries that
+would be cumbersome to express as SQL joins (e.g. finding alternative drugs
+that avoid a specific side effect).
+
+**Schema:**
+- Nodes: `Drug {name}`, `SideEffect {name}`
+- Relationship: `(Drug)-[:CAUSES]->(SideEffect)`
+
+**Migration**: 158,095 unique drug-side-effect pairs, normalized (lowercased,
+trimmed) during export from Postgres to unify naming across records, batch-
+migrated into Neo4j (5,000 records per transaction) using the `neo4j` Python
+driver.
+
+**Query language**: Neo4j uses Cypher, a pattern-matching query language
+purpose-built for graphs — relationships are expressed directly as arrows
+in the query rather than reconstructed through table joins.
+
+**Example 1 — all side effects of a specific drug (aspirin):**
+
+```cypher
+MATCH (d:Drug {name: "aspirin"})-[:CAUSES]->(s:SideEffect)
+RETURN s.name
+```
+
+Returns 86 distinct side effects for aspirin, including vertigo, dizziness,
+haematemesis, and respiratory failure.
+
+<p align="center">
+  <img src="screenshots/aspirinsideeffects.png" alt="Aspirin side effects query" width="700"/>
+</p>
+
+**Example 2 — general drug-side-effect pairs across the graph:**
+
+```cypher
+MATCH (d:Drug)-[:CAUSES]->(s:SideEffect)
+RETURN d.name, s.name LIMIT 10
+```
+
+<p align="center">
+  <img src="screenshots/neo4jfirst10rows.png" alt="First 10 drug-side-effect pairs" width="700"/>
+</p>
+
 ## Completed So Far
 
 - Unified preprocessing pipeline merging three biomedical text corpora (BC5CDR, BioRED, ADE Corpus) into a standardized schema with normalized entity and relation labels.
@@ -72,6 +117,7 @@ changes between runs.
   - **Named Entity Recognition (NER):** **PubMedBERT** achieved the top performance (**0.829 F1**, **0.855 Precision**), with **BioBERT** providing maximum entity sensitivity (**0.849 Recall**).
   - **Relation Extraction (RE):** **SciBERT** achieved the leading performance across all metrics (**0.952 F1**, **0.962 Precision**, **0.960 Recall**).
 - Generated and documented comparative evaluation tables and benchmark visualizations.
+- Structured knowledge base migrated into a Neo4j graph database (158,095 drug-side-effect relationships), verified via Cypher queries.
 
 ---
 
