@@ -52,7 +52,7 @@ def find_evidence_sentences(drug_name, disease_name, max_results=3):
 
 
 if __name__ == "__main__":
-    results = find_evidence_sentences("aspirin", "hypertensive")
+    results = find_evidence_sentences("alpha-methyldopa", "hypotensive")
     print(f"Found {len(results)} evidence sentence(s)\n")
     for r in results:
         print(f"[{r['source_dataset']}] relation={r['relation_type']}")
