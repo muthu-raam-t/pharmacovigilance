@@ -4,8 +4,16 @@ sys.path.append("/workspace/models")
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from analyze_drug_disease import analyze
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Pharmacovigilance Advisory API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class AnalyzeRequest(BaseModel):
