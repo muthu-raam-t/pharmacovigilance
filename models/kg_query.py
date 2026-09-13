@@ -7,6 +7,34 @@ NEO4J_AUTH = ("neo4j", "drugsafety123")
 class KnowledgeGraphClient:
     def __init__(self):
         self.driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
+    def get_model_prediction(self, drug_name, disease_name):
+        drug_name = drug_name.strip().lower()
+        disease_name = disease_name.strip().lower()
+        query = """
+        MATCH (d:Drug {name: $drug_name})-[r:MODEL_PREDICTED]->(dis:Disease {name: $disease_name})
+        RETURN r.relation AS relation, r.confidence AS confidence, r.model AS model
+        ORDER BY r.confidence DESC LIMIT 1
+        """
+        with self.driver.session() as session:
+            result = session.run(query, drug_name=drug_name, disease_name=disease_name)
+            record = result.single()
+            if record:
+                return {"relation": record["relation"], "confidence": record["confidence"], "model": record["model"]}
+            return None
+
+    def get_drugs_model_associated_with_disease(self, disease_name, exclude_drug=None):
+        disease_name = disease_name.strip().lower()
+        query = """
+        MATCH (d:Drug)-[r:MODEL_PREDICTED {relation: "ASSOCIATED"}]->(dis:Disease {name: $disease_name})
+        RETURN DISTINCT d.name AS drug_name
+        """
+        with self.driver.session() as session:
+            result = session.run(query, disease_name=disease_name)
+            drugs = [record["drug_name"] for record in result]
+        if exclude_drug:
+            drugs = [d for d in drugs if d != exclude_drug.strip().lower()]
+        return drugs
+
 
     def close(self):
         self.driver.close()
