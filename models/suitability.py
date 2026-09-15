@@ -1,6 +1,7 @@
 import sys
 sys.path.append("/workspace/models")
 
+from common_indications import is_known_indication
 from kg_query import KnowledgeGraphClient
 from ranking_engine import get_ranked_side_effects
 from kb_utils import is_known_drug_in_sider
@@ -16,6 +17,20 @@ def check_suitability(drug_name, disease_name):
     model_pred = kg.get_model_prediction(drug_name, disease_name)
 
     kg.close()
+
+    if is_known_indication(drug_name, disease_name):
+        side_effects_check = get_ranked_side_effects(drug_name)
+        common_check = [e for e in side_effects_check if e["severity_bucket"] in ("common", "occasional")]
+        return {
+            "verdict": "LIKELY_SUITABLE",
+            "reason": (f"'{drug_name.title()}' is a well-established treatment for '{disease_name}' according to "
+                       f"standard clinical reference. Note: automated literature extraction may show conflicting "
+                       f"adverse-event signals below — those reflect known side effects, not a contraindication."),
+            "side_effect_count": len(side_effects_check),
+            "common_side_effect_count": len(common_check),
+            "has_side_effect_data": is_known_drug_in_sider(drug_name),
+            "source": "curated_clinical_reference",
+        }
 
     side_effects = get_ranked_side_effects(drug_name)
     common_effects = [e for e in side_effects if e["severity_bucket"] in ("common", "occasional")]
