@@ -9,26 +9,29 @@ const VERDICT_STYLES = {
 };
 
 const EXAMPLES = [
+  { drug: "metformin", disease: "type 2 diabetes" },
+  { drug: "albuterol", disease: "asthma" },
   { drug: "alpha-methyldopa", disease: "hypotensive" },
-  { drug: "aspirin", disease: "headache" },
-  { drug: "clonidine", disease: "hypertensive" },
 ];
 
 function SourceBadge({ source }) {
   const isModel = source && source.startsWith("model_prediction");
+  const isCurated = source === "curated_clinical_reference";
   const confidenceMatch = isModel && source.match(/(\d+)%/);
+
+  const style = isCurated
+    ? { bg: "#eafaf1", color: "#1e8449", border: "#a3d9b1", label: "📋 Clinical Reference" }
+    : isModel
+    ? { bg: "#e8f0fe", color: "#1a56db", border: "#a9c6f7", label: "🤖 SciBERT Prediction" }
+    : { bg: "#fff4e0", color: "#8a5a00", border: "#f0d090", label: "📖 Human-Verified" };
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-      <span
-        style={{
-          fontSize: "0.75rem", fontWeight: 600, padding: "0.25rem 0.7rem", borderRadius: "999px",
-          backgroundColor: isModel ? "#e8f0fe" : "#fff4e0",
-          color: isModel ? "#1a56db" : "#8a5a00",
-          border: `1px solid ${isModel ? "#a9c6f7" : "#f0d090"}`,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {isModel ? "🤖 SciBERT Prediction" : "📖 Human-Verified"}
+      <span style={{
+        fontSize: "0.75rem", fontWeight: 600, padding: "0.25rem 0.7rem", borderRadius: "999px",
+        backgroundColor: style.bg, color: style.color, border: `1px solid ${style.border}`, whiteSpace: "nowrap",
+      }}>
+        {style.label}
       </span>
       {confidenceMatch && (
         <div style={{ width: "70px", height: "6px", backgroundColor: "#dbe7fb", borderRadius: "3px", overflow: "hidden" }}>
