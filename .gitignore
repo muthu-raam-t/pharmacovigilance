@@ -42,3 +42,10 @@ logs/
 *.sqlite3
 pgdata/
 neo4j_data/
+
+# Results are small and should be committed (overrides the *.csv rule above)
+!results/
+!results/*.csv
+
+# Frontend local env
+frontend/.env.local
