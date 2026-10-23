@@ -1,0 +1,22 @@
+{
+  "bert_base": {
+    "name": "BERT-base",
+    "hf_id": "bert-base-uncased"
+  },
+  "roberta": {
+    "name": "RoBERTa",
+    "hf_id": "roberta-base"
+  },
+  "scibert": {
+    "name": "SciBERT",
+    "hf_id": "allenai/scibert_scivocab_uncased"
+  },
+  "biobert": {
+    "name": "BioBERT",
+    "hf_id": "dmis-lab/biobert-base-cased-v1.2"
+  },
+  "pubmedbert": {
+    "name": "PubMedBERT",
+    "hf_id": "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
+  }
+}

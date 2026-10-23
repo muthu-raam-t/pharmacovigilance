@@ -1,0 +1,65 @@
+{
+  "train": {
+    "records": 5036,
+    "by_source": {
+      "BC5CDR": 1219,
+      "ADE": 3345,
+      "BioRED": 472
+    },
+    "entities": {
+      "Chemical": 20398,
+      "Disease": 19359,
+      "Gene": 5296,
+      "Variant": 1150,
+      "Organism": 1773,
+      "CellLine": 138
+    },
+    "relations": {
+      "CAUSES": 52269,
+      "ASSOCIATED": 78210,
+      "TREATS": 5541
+    }
+  },
+  "val": {
+    "records": 629,
+    "by_source": {
+      "ADE": 423,
+      "BC5CDR": 140,
+      "BioRED": 66
+    },
+    "entities": {
+      "Chemical": 2404,
+      "Disease": 2334,
+      "Gene": 753,
+      "Organism": 201,
+      "Variant": 131,
+      "CellLine": 24
+    },
+    "relations": {
+      "CAUSES": 5850,
+      "ASSOCIATED": 9993,
+      "TREATS": 1024
+    }
+  },
+  "test": {
+    "records": 629,
+    "by_source": {
+      "ADE": 426,
+      "BC5CDR": 141,
+      "BioRED": 62
+    },
+    "entities": {
+      "Chemical": 2377,
+      "Disease": 2312,
+      "Organism": 210,
+      "Gene": 646,
+      "Variant": 94,
+      "CellLine": 13
+    },
+    "relations": {
+      "CAUSES": 5530,
+      "ASSOCIATED": 7077,
+      "TREATS": 934
+    }
+  }
+}
