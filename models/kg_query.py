@@ -1,111 +1,76 @@
-from neo4j import GraphDatabase
+"""Neo4j knowledge-graph queries.
 
-NEO4J_URI = "bolt://neo4j:7687"
-NEO4J_AUTH = ("neo4j", "drugsafety123")
+Graph schema
+  (:Drug)-[:CAUSES]->(:SideEffect)                    SIDER
+  (:Drug)-[:CAUSES_CONDITION]->(:Disease)             gold annotation (BC5CDR, ADE, BioRED positive correlation)
+  (:Drug)-[:TREATS_CONDITION]->(:Disease)             gold annotation (BioRED negative correlation)
+  (:Drug)-[:ASSOCIATED_WITH]->(:Disease)              gold annotation (other BioRED associations)
+  (:Drug)-[:MODEL_PREDICTED {relation, confidence, support, model}]->(:Disease)
+"""
+from db import neo4j_query
+from text_utils import normalize_name
+
+GOLD_EDGES = {"CAUSES": "CAUSES_CONDITION", "TREATS": "TREATS_CONDITION", "ASSOCIATED": "ASSOCIATED_WITH"}
 
 
 class KnowledgeGraphClient:
-    def __init__(self):
-        self.driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
-    def get_model_prediction(self, drug_name, disease_name):
-        drug_name = drug_name.strip().lower()
-        disease_name = disease_name.strip().lower()
-        query = """
-        MATCH (d:Drug {name: $drug_name})-[r:MODEL_PREDICTED]->(dis:Disease {name: $disease_name})
-        RETURN r.relation AS relation, r.confidence AS confidence, r.model AS model
-        ORDER BY r.confidence DESC LIMIT 1
-        """
-        with self.driver.session() as session:
-            result = session.run(query, drug_name=drug_name, disease_name=disease_name)
-            record = result.single()
-            if record:
-                return {"relation": record["relation"], "confidence": record["confidence"], "model": record["model"]}
-            return None
-
-    def get_drugs_model_associated_with_disease(self, disease_name, exclude_drug=None):
-        disease_name = disease_name.strip().lower()
-        query = """
-        MATCH (d:Drug)-[r:MODEL_PREDICTED {relation: "ASSOCIATED"}]->(dis:Disease {name: $disease_name})
-        RETURN DISTINCT d.name AS drug_name
-        """
-        with self.driver.session() as session:
-            result = session.run(query, disease_name=disease_name)
-            drugs = [record["drug_name"] for record in result]
-        if exclude_drug:
-            drugs = [d for d in drugs if d != exclude_drug.strip().lower()]
-        return drugs
-
+    """Thin wrapper kept for backwards compatibility; uses the shared Neo4j driver."""
 
     def close(self):
-        self.driver.close()
+        pass  # the shared driver stays open for the lifetime of the process
 
-    def get_side_effects_for_drug(self, drug_name):
-        drug_name = drug_name.strip().lower()
-        query = """
-        MATCH (d:Drug {name: $drug_name})-[:CAUSES]->(s:SideEffect)
-        RETURN s.name AS side_effect
-        """
-        with self.driver.session() as session:
-            result = session.run(query, drug_name=drug_name)
-            return [record["side_effect"] for record in result]
-
-    def drug_causes_disease(self, drug_name, disease_name):
-        drug_name = drug_name.strip().lower()
-        disease_name = disease_name.strip().lower()
-        query = """
-        MATCH (d:Drug {name: $drug_name})-[:CAUSES_CONDITION]->(dis:Disease {name: $disease_name})
-        RETURN count(*) AS cnt
-        """
-        with self.driver.session() as session:
-            result = session.run(query, drug_name=drug_name, disease_name=disease_name)
-            return result.single()["cnt"] > 0
-
-    def drug_associated_with_disease(self, drug_name, disease_name):
-        drug_name = drug_name.strip().lower()
-        disease_name = disease_name.strip().lower()
-        query = """
-        MATCH (d:Drug {name: $drug_name})-[:ASSOCIATED_WITH]->(dis:Disease {name: $disease_name})
-        RETURN count(*) AS cnt
-        """
-        with self.driver.session() as session:
-            result = session.run(query, drug_name=drug_name, disease_name=disease_name)
-            return result.single()["cnt"] > 0
-
-    def get_drugs_associated_with_disease(self, disease_name, exclude_drug=None):
-        disease_name = disease_name.strip().lower()
-        query = """
-        MATCH (d:Drug)-[:ASSOCIATED_WITH]->(dis:Disease {name: $disease_name})
-        RETURN DISTINCT d.name AS drug_name
-        """
-        with self.driver.session() as session:
-            result = session.run(query, disease_name=disease_name)
-            drugs = [record["drug_name"] for record in result]
-
-        if exclude_drug:
-            drugs = [d for d in drugs if d != exclude_drug.strip().lower()]
-        return drugs
-
-    def get_drugs_that_cause_disease(self, disease_name):
-        """Drugs known to cause/induce this exact condition - useful to exclude from suggestions."""
-        disease_name = disease_name.strip().lower()
-        query = """
-        MATCH (d:Drug)-[:CAUSES_CONDITION]->(dis:Disease {name: $disease_name})
-        RETURN DISTINCT d.name AS drug_name
-        """
-        with self.driver.session() as session:
-            result = session.run(query, disease_name=disease_name)
-            return [record["drug_name"] for record in result]
-
+    # ---------- existence ----------
     def drug_exists(self, drug_name):
-        drug_name = drug_name.strip().lower()
-        query = "MATCH (d:Drug {name: $drug_name}) RETURN count(d) AS cnt"
-        with self.driver.session() as session:
-            result = session.run(query, drug_name=drug_name)
-            return result.single()["cnt"] > 0
+        rows = neo4j_query("MATCH (d:Drug {name: $n}) RETURN count(d) AS c", n=normalize_name(drug_name))
+        return rows[0]["c"] > 0
 
     def disease_exists(self, disease_name):
-        disease_name = disease_name.strip().lower()
-        query = "MATCH (dis:Disease {name: $disease_name}) RETURN count(dis) AS cnt"
-        with self.driver.session() as session:
-            result = session.run(query, disease_name=disease_name)
-            return result.single()["cnt"] > 0
+        rows = neo4j_query("MATCH (d:Disease {name: $n}) RETURN count(d) AS c", n=normalize_name(disease_name))
+        return rows[0]["c"] > 0
+
+    # ---------- side effects ----------
+    def get_side_effects_for_drug(self, drug_name):
+        rows = neo4j_query("MATCH (d:Drug {name: $n})-[:CAUSES]->(s:SideEffect) RETURN s.name AS name",
+                           n=normalize_name(drug_name))
+        return [r["name"] for r in rows]
+
+    # ---------- drug-disease evidence ----------
+    def get_pair_evidence(self, drug_name, disease_name):
+        """All gold and model evidence connecting one drug and one disease."""
+        rows = neo4j_query("""
+            MATCH (d:Drug {name: $drug})-[r]->(dis:Disease {name: $disease})
+            RETURN type(r) AS edge, r.relation AS relation, r.confidence AS confidence,
+                   r.model AS model, r.support AS support
+        """, drug=normalize_name(drug_name), disease=normalize_name(disease_name))
+        gold = {rel: False for rel in GOLD_EDGES}
+        gold_support = {rel: 0 for rel in GOLD_EDGES}
+        model = []
+        for r in rows:
+            for rel, edge in GOLD_EDGES.items():
+                if r["edge"] == edge:
+                    gold[rel] = True
+                    gold_support[rel] = r.get("support") or 1
+            if r["edge"] == "MODEL_PREDICTED":
+                model.append({"relation": r["relation"], "confidence": float(r["confidence"] or 0.0),
+                              "model": r["model"], "support": r.get("support") or 1})
+        model.sort(key=lambda m: m["confidence"], reverse=True)
+        return {"gold": gold, "gold_support": gold_support, "model": model}
+
+    def get_disease_candidates(self, disease_name):
+        """Drugs linked to a disease, grouped by evidence type (used for alternative suggestions)."""
+        rows = neo4j_query("""
+            MATCH (d:Drug)-[r]->(dis:Disease {name: $disease})
+            WHERE type(r) IN ['CAUSES_CONDITION', 'TREATS_CONDITION', 'MODEL_PREDICTED']
+            RETURN d.name AS drug, type(r) AS edge, r.relation AS relation, r.confidence AS confidence
+        """, disease=normalize_name(disease_name))
+        out = {"gold_treats": set(), "gold_causes": set(), "model_treats": {}, "model_causes": {}}
+        for r in rows:
+            if r["edge"] == "TREATS_CONDITION":
+                out["gold_treats"].add(r["drug"])
+            elif r["edge"] == "CAUSES_CONDITION":
+                out["gold_causes"].add(r["drug"])
+            elif r["relation"] == "TREATS":
+                out["model_treats"][r["drug"]] = max(out["model_treats"].get(r["drug"], 0.0), float(r["confidence"]))
+            elif r["relation"] == "CAUSES":
+                out["model_causes"][r["drug"]] = max(out["model_causes"].get(r["drug"], 0.0), float(r["confidence"]))
+        return out

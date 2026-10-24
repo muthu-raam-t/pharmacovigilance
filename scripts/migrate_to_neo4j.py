@@ -1,41 +1,35 @@
+"""Loads SIDER drug -> side-effect pairs (preferred terms) from PostgreSQL into Neo4j."""
+import sys
+from pathlib import Path
+
 import psycopg2
 from neo4j import GraphDatabase
 
-PG_CONFIG = dict(host="postgres", dbname="drug_safety_db", user="drug_user", password="drug_password")
-NEO4J_URI = "bolt://neo4j:7687"
-NEO4J_AUTH = ("neo4j", "drugsafety123")
-BATCH_SIZE = 5000
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "models"))
+import pv_config as cfg  # noqa: E402
 
-CYPHER_MERGE = """
+BATCH_SIZE = 5000
+CYPHER = """
 UNWIND $rows AS row
 MERGE (d:Drug {name: row.drug_name})
 MERGE (s:SideEffect {name: row.side_effect_name})
-MERGE (d)-[:CAUSES]->(s)
+MERGE (d)-[r:CAUSES]->(s)
+SET r.source = 'SIDER'
 """
 
-def fetch_rows(pg_conn):
-    cur = pg_conn.cursor()
-    cur.execute("SELECT drug_name, side_effect_name FROM drug_side_effects_clean;")
-    return cur.fetchall()
+if __name__ == "__main__":
+    pg = psycopg2.connect(**cfg.POSTGRES)
+    cur = pg.cursor()
+    cur.execute("SELECT drug_name, side_effect_name FROM drug_side_effects_clean")
+    rows = [{"drug_name": a, "side_effect_name": b} for a, b in cur.fetchall()]
+    pg.close()
 
-def migrate():
-    pg_conn = psycopg2.connect(**PG_CONFIG)
-    driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
-
-    rows = fetch_rows(pg_conn)
-    total = len(rows)
-    print(f"Migrating {total} drug-side_effect pairs...")
-
+    print(f"Migrating {len(rows):,} drug-side-effect pairs ...")
+    driver = GraphDatabase.driver(cfg.NEO4J_URI, auth=cfg.NEO4J_AUTH)
     with driver.session() as session:
-        for i in range(0, total, BATCH_SIZE):
-            batch = rows[i:i + BATCH_SIZE]
-            batch_dicts = [{"drug_name": r[0], "side_effect_name": r[1]} for r in batch]
-            session.run(CYPHER_MERGE, rows=batch_dicts)
-            print(f"  {min(i + BATCH_SIZE, total)}/{total} migrated")
-
-    pg_conn.close()
+        for i in range(0, len(rows), BATCH_SIZE):
+            session.run(CYPHER, rows=rows[i:i + BATCH_SIZE]).consume()
+            print(f"  {min(i + BATCH_SIZE, len(rows)):,}/{len(rows):,}")
     driver.close()
     print("Migration complete.")
-
-if __name__ == "__main__":
-    migrate()

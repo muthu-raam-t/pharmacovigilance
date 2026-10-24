@@ -1,61 +1,38 @@
+"""Loads gold drug-disease relations into Neo4j:
+CAUSES -> CAUSES_CONDITION, TREATS -> TREATS_CONDITION, ASSOCIATED -> ASSOCIATED_WITH."""
 import json
+import sys
+from pathlib import Path
+
 from neo4j import GraphDatabase
 
-NEO4J_URI = "bolt://neo4j:7687"
-NEO4J_AUTH = ("neo4j", "drugsafety123")
-IN_PATH = "/workspace/data/processed/drug_disease_associations.jsonl"
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "models"))
+import pv_config as cfg  # noqa: E402
+
+IN_PATH = cfg.PROCESSED_DIR / "drug_disease_associations.jsonl"
 BATCH_SIZE = 2000
-
-CYPHER_CAUSES = """
-UNWIND $rows AS row
-MERGE (d:Drug {name: row.drug_name})
-MERGE (dis:Disease {name: row.disease_name})
-MERGE (d)-[:CAUSES_CONDITION]->(dis)
-"""
-
-CYPHER_ASSOCIATED = """
-UNWIND $rows AS row
-MERGE (d:Drug {name: row.drug_name})
-MERGE (dis:Disease {name: row.disease_name})
-MERGE (d)-[:ASSOCIATED_WITH]->(dis)
-"""
-
-
-def load_pairs():
-    with open(IN_PATH, encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
-
-
-def setup_disease_constraint(driver):
-    with driver.session() as session:
-        session.run("CREATE CONSTRAINT disease_name_unique IF NOT EXISTS FOR (dis:Disease) REQUIRE dis.name IS UNIQUE")
-    print("Disease constraint ready.")
-
-
-def migrate():
-    pairs = load_pairs()
-    causes_rows = [p for p in pairs if p["relation"] == "CAUSES"]
-    associated_rows = [p for p in pairs if p["relation"] == "ASSOCIATED"]
-
-    driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
-    setup_disease_constraint(driver)
-
-    with driver.session() as session:
-        print(f"Loading {len(causes_rows)} CAUSES_CONDITION relationships...")
-        for i in range(0, len(causes_rows), BATCH_SIZE):
-            batch = causes_rows[i:i + BATCH_SIZE]
-            session.run(CYPHER_CAUSES, rows=batch)
-        print("Done.")
-
-        print(f"Loading {len(associated_rows)} ASSOCIATED_WITH relationships...")
-        for i in range(0, len(associated_rows), BATCH_SIZE):
-            batch = associated_rows[i:i + BATCH_SIZE]
-            session.run(CYPHER_ASSOCIATED, rows=batch)
-        print("Done.")
-
-    driver.close()
-    print("Migration complete.")
-
+EDGE_TYPES = {"CAUSES": "CAUSES_CONDITION", "TREATS": "TREATS_CONDITION", "ASSOCIATED": "ASSOCIATED_WITH"}
 
 if __name__ == "__main__":
-    migrate()
+    with open(IN_PATH, encoding="utf-8") as f:
+        pairs = [json.loads(line) for line in f if line.strip()]
+
+    driver = GraphDatabase.driver(cfg.NEO4J_URI, auth=cfg.NEO4J_AUTH)
+    with driver.session() as session:
+        session.run("CREATE CONSTRAINT disease_name_unique IF NOT EXISTS "
+                    "FOR (dis:Disease) REQUIRE dis.name IS UNIQUE").consume()
+        for relation, edge in EDGE_TYPES.items():
+            rows = [p for p in pairs if p["relation"] == relation]
+            cypher = f"""
+            UNWIND $rows AS row
+            MERGE (d:Drug {{name: row.drug_name}})
+            MERGE (dis:Disease {{name: row.disease_name}})
+            MERGE (d)-[r:{edge}]->(dis)
+            SET r.support = row.support, r.sources = row.source_datasets
+            """
+            for i in range(0, len(rows), BATCH_SIZE):
+                session.run(cypher, rows=rows[i:i + BATCH_SIZE]).consume()
+            print(f"Loaded {len(rows):,} {edge} relationships")
+    driver.close()
+    print("Done.")
