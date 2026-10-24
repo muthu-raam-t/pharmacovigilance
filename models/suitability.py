@@ -1,96 +1,128 @@
-import sys
-sys.path.append("/workspace/models")
+"""Evidence-fusion verdict for one drug-disease pair.
 
-from common_indications import is_known_indication
+Priority of evidence (strongest first):
+  1. Curated clinical reference (well-established indication)         -> LIKELY_SUITABLE
+  2. Unknown drug / disease                                            -> UNKNOWN_DRUG / UNKNOWN_DISEASE
+  3. Gold (human-annotated) literature evidence
+       TREATS and CAUSES both present                                  -> MIXED_EVIDENCE
+       TREATS                                                          -> LIKELY_SUITABLE
+       CAUSES                                                          -> NOT_RECOMMENDED
+  4. Model-predicted evidence (highest-confidence TREATS vs CAUSES)    -> LIKELY_SUITABLE / NOT_RECOMMENDED
+  5. Only a non-directional association (gold or model)                -> ASSOCIATION_ONLY
+  6. Nothing                                                           -> NO_DIRECT_EVIDENCE
+Human annotations always outrank model predictions.
+"""
+from common_indications import is_known_indication, get_known_treating_drugs
 from kg_query import KnowledgeGraphClient
+from kb_utils import is_known_drug, side_effect_sources_for
 from ranking_engine import get_ranked_side_effects
-from kb_utils import is_known_drug_in_sider
 
 
-def check_suitability(drug_name, disease_name):
-    kg = KnowledgeGraphClient()
-
-    drug_known = kg.drug_exists(drug_name)
-    disease_known = kg.disease_exists(disease_name)
-    causes_condition = kg.drug_causes_disease(drug_name, disease_name)
-    associated = kg.drug_associated_with_disease(drug_name, disease_name)
-    model_pred = kg.get_model_prediction(drug_name, disease_name)
-
-    kg.close()
-
-    if is_known_indication(drug_name, disease_name):
-        side_effects_check = get_ranked_side_effects(drug_name)
-        common_check = [e for e in side_effects_check if e["severity_bucket"] in ("common", "occasional")]
-        return {
-            "verdict": "LIKELY_SUITABLE",
-            "reason": (f"'{drug_name.title()}' is a well-established treatment for '{disease_name}' according to "
-                       f"standard clinical reference. Note: automated literature extraction may show conflicting "
-                       f"adverse-event signals below — those reflect known side effects, not a contraindication."),
-            "side_effect_count": len(side_effects_check),
-            "common_side_effect_count": len(common_check),
-            "has_side_effect_data": is_known_drug_in_sider(drug_name),
-            "source": "curated_clinical_reference",
-        }
-
-    side_effects = get_ranked_side_effects(drug_name)
-    common_effects = [e for e in side_effects if e["severity_bucket"] in ("common", "occasional")]
-    has_side_effect_data = is_known_drug_in_sider(drug_name)
-
-    if not drug_known and not model_pred and not has_side_effect_data:
-        return {
-            "verdict": "UNKNOWN_DRUG",
-            "reason": f"'{drug_name}' was not found in the knowledge base. Cannot assess suitability.",
-            "side_effect_count": None,
-            "has_side_effect_data": False,
-            "source": "none",
-        }
-
-    if not disease_known and not model_pred:
-        return {
-            "verdict": "UNKNOWN_DISEASE",
-            "reason": f"'{disease_name}' was not found in the knowledge base.",
-            "side_effect_count": len(side_effects),
-            "has_side_effect_data": has_side_effect_data,
-            "source": "none",
-        }
-
-    if causes_condition:
-        verdict, source = "NOT_RECOMMENDED", "gold_annotation"
-        reason = (f"Literature evidence (gold-annotated) indicates '{drug_name}' has been associated with causing "
-                  f"or worsening '{disease_name}'. This drug may not be appropriate for this condition.")
-    elif model_pred and model_pred["relation"] == "CAUSES":
-        verdict = "NOT_RECOMMENDED"
-        source = f"model_prediction (SciBERT, {model_pred['confidence']*100:.0f}% confidence)"
-        reason = (f"The SciBERT model predicts (confidence {model_pred['confidence']*100:.0f}%) that '{drug_name}' "
-                  f"may cause or worsen '{disease_name}'. This drug may not be appropriate for this condition.")
-    elif associated:
-        verdict, source = "LIKELY_SUITABLE", "gold_annotation"
-        reason = (f"'{drug_name}' appears in gold-annotated literature connected to '{disease_name}'. "
-                  + (f"It has {len(side_effects)} known side effects ({len(common_effects)} common/occasional)."
-                     if has_side_effect_data else
-                     "No side-effect data is available for this drug in the current database."))
-    elif model_pred and model_pred["relation"] == "ASSOCIATED":
-        verdict = "LIKELY_SUITABLE"
-        source = f"model_prediction (SciBERT, {model_pred['confidence']*100:.0f}% confidence)"
-        reason = (f"The SciBERT model predicts (confidence {model_pred['confidence']*100:.0f}%) a clinical "
-                  f"association between '{drug_name}' and '{disease_name}'.")
-    else:
-        verdict, source = "NO_DIRECT_EVIDENCE", "none"
-        reason = (f"No direct evidence was found connecting '{drug_name}' to '{disease_name}' in gold annotations "
-                  f"or model predictions. This does not necessarily mean it is unsuitable — consult a medical professional.")
-
+def _side_effect_summary(side_effects):
     return {
-        "verdict": verdict,
-        "reason": reason,
         "side_effect_count": len(side_effects),
-        "common_side_effect_count": len(common_effects),
-        "has_side_effect_data": has_side_effect_data,
-        "source": source,
+        "common_side_effect_count": sum(e["severity_bucket"] in ("common", "occasional") for e in side_effects),
+        "boxed_warning_count": sum(bool(e["boxed_warning"]) for e in side_effects),
     }
 
 
+def check_suitability(drug_name, disease_name, side_effects=None):
+    if side_effects is None:
+        side_effects = get_ranked_side_effects(drug_name)
+    kg = KnowledgeGraphClient()
+    evidence = kg.get_pair_evidence(drug_name, disease_name)
+    gold, model = evidence["gold"], evidence["model"]
+    se_sources = side_effect_sources_for(drug_name)
+
+    base = {
+        **_side_effect_summary(side_effects),
+        "has_side_effect_data": bool(se_sources),
+        "side_effect_sources": se_sources,
+        "gold_evidence": gold,
+        "gold_support": evidence["gold_support"],
+        "model_predictions": model,
+        "evidence_type": "none",
+        "model_name": None,
+        "model_confidence": None,
+    }
+
+    def result(verdict, reason, source, evidence_type, model_pred=None):
+        out = dict(base, verdict=verdict, reason=reason, source=source, evidence_type=evidence_type)
+        if model_pred:
+            out["model_name"] = model_pred["model"]
+            out["model_confidence"] = model_pred["confidence"]
+        return out
+
+    d, dis = drug_name.strip(), disease_name.strip()
+
+    # 1. curated clinical reference
+    if is_known_indication(d, dis):
+        return result("LIKELY_SUITABLE",
+                      f"'{d.title()}' is a well-established treatment for '{dis}' according to a standard "
+                      f"clinical reference. Side effects listed below are known adverse effects of the drug, "
+                      f"not a contraindication.",
+                      "curated_clinical_reference", "curated")
+
+    # 2. unknown inputs
+    drug_known = is_known_drug(d) or kg.drug_exists(d) or bool(model)
+    if not drug_known:
+        return result("UNKNOWN_DRUG", f"'{d}' was not found in the knowledge base, so suitability cannot be assessed.",
+                      "none", "none")
+    if not (kg.disease_exists(dis) or get_known_treating_drugs(dis) or model):
+        return result("UNKNOWN_DISEASE", f"'{dis}' was not found in the knowledge base.", "none", "none")
+
+    # 3. gold annotations
+    if gold["TREATS"] and gold["CAUSES"]:
+        return result("MIXED_EVIDENCE",
+                      f"Human-annotated literature reports '{d}' both as a treatment for '{dis}' and as a cause "
+                      f"or aggravating factor of it. The balance depends on dose, patient group and context - "
+                      f"consult a medical professional.",
+                      "gold_annotation", "gold")
+    if gold["TREATS"]:
+        return result("LIKELY_SUITABLE",
+                      f"Human-annotated literature reports that '{d}' treats or reduces '{dis}'.",
+                      "gold_annotation", "gold")
+    if gold["CAUSES"]:
+        return result("NOT_RECOMMENDED",
+                      f"Human-annotated literature reports '{d}' as a cause or aggravating factor of '{dis}'. "
+                      f"This drug may not be appropriate for this condition.",
+                      "gold_annotation", "gold")
+
+    # 4. model predictions (directional)
+    directional = [m for m in model if m["relation"] in ("TREATS", "CAUSES")]
+    if directional:
+        best = directional[0]
+        pct = f"{best['confidence'] * 100:.0f}%"
+        src = f"model_prediction ({best['model']}, {pct} confidence)"
+        if best["relation"] == "TREATS":
+            return result("LIKELY_SUITABLE",
+                          f"The {best['model']} relation-extraction model predicts (confidence {pct}) that '{d}' "
+                          f"treats or reduces '{dis}'. This is an automated prediction, not a human-verified fact.",
+                          src, "model", best)
+        return result("NOT_RECOMMENDED",
+                      f"The {best['model']} relation-extraction model predicts (confidence {pct}) that '{d}' may "
+                      f"cause or worsen '{dis}'. This is an automated prediction, not a human-verified fact.",
+                      src, "model", best)
+
+    # 5. association only
+    assoc_model = [m for m in model if m["relation"] == "ASSOCIATED"]
+    if gold["ASSOCIATED"] or assoc_model:
+        who = "Human-annotated literature" if gold["ASSOCIATED"] else f"The {assoc_model[0]['model']} model"
+        return result("ASSOCIATION_ONLY",
+                      f"{who} links '{d}' and '{dis}', but does not say whether the drug treats or causes it.",
+                      "gold_annotation" if gold["ASSOCIATED"] else
+                      f"model_prediction ({assoc_model[0]['model']}, {assoc_model[0]['confidence'] * 100:.0f}% confidence)",
+                      "gold" if gold["ASSOCIATED"] else "model",
+                      None if gold["ASSOCIATED"] else assoc_model[0])
+
+    # 6. nothing
+    return result("NO_DIRECT_EVIDENCE",
+                  f"No evidence connecting '{d}' and '{dis}' was found in the annotated literature or the model "
+                  f"predictions. This does not mean the drug is unsuitable - consult a medical professional.",
+                  "none", "none")
+
+
 if __name__ == "__main__":
-    result = check_suitability("alpha-methyldopa", "hypotensive")
-    print(result["verdict"])
-    print(result["reason"])
-    print("Source:", result["source"])
+    r = check_suitability("alpha-methyldopa", "hypotensive")
+    print(r["verdict"], "|", r["source"])
+    print(r["reason"])

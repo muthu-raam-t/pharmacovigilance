@@ -1,67 +1,73 @@
-import sys
-sys.path.append("/workspace/models")
+"""Alternative-drug suggestion for a disease.
 
+Candidates (evidence tier, strongest first):
+  1. curated clinical reference          2. gold TREATS annotation          3. model-predicted TREATS
+Excluded: the queried drug, drugs with gold CAUSES evidence for the disease, and drugs whose
+strongest model prediction for the disease is CAUSES. Only drugs found in SIDER or OnSIDES are kept.
+Ranking: evidence tier, then number of boxed-warning effects, then side-effect burden (lower is better).
+"""
 from common_indications import get_known_treating_drugs
 from kg_query import KnowledgeGraphClient
-from ranking_engine import get_ranked_side_effects
-from kb_utils import is_known_drug_in_sider
+from kb_utils import is_known_drug
+from ranking_engine import get_ranked_side_effects, side_effect_burden
+from text_utils import normalize_name
+
+TIERS = {"curated": 1, "gold": 2, "model_prediction": 3}
 
 
 def suggest_alternatives_for_disease(disease_name, exclude_drug=None, top_n=5):
+    disease = normalize_name(disease_name)
+    exclude = normalize_name(exclude_drug) if exclude_drug else None
     kg = KnowledgeGraphClient()
 
-    if not kg.disease_exists(disease_name):
-        kg.close()
-        return {"error": f"'{disease_name}' not found in knowledge base — cannot suggest alternatives."}
+    curated = set(get_known_treating_drugs(disease))
+    if not curated and not kg.disease_exists(disease):
+        return {"error": f"'{disease_name}' was not found in the knowledge base, so no alternatives can be suggested."}
 
-    curated_candidates = set(get_known_treating_drugs(disease_name))
-    if exclude_drug:
-        curated_candidates.discard(exclude_drug.strip().lower())
+    c = kg.get_disease_candidates(disease)
+    candidates = {}
+    for drug in curated:
+        candidates[drug] = ("curated", None)
+    for drug in c["gold_treats"]:
+        candidates.setdefault(drug, ("gold", None))
+    for drug, conf in c["model_treats"].items():
+        if conf >= c["model_causes"].get(drug, 0.0):
+            candidates.setdefault(drug, ("model_prediction", conf))
 
-    gold_candidates = set(kg.get_drugs_associated_with_disease(disease_name, exclude_drug=exclude_drug))
-    model_candidates = set(kg.get_drugs_model_associated_with_disease(disease_name, exclude_drug=exclude_drug))
-    known_to_cause_it = set(kg.get_drugs_that_cause_disease(disease_name))
-    kg.close()
+    for drug in list(candidates):
+        if drug == exclude:
+            del candidates[drug]
+        elif drug in c["gold_causes"] and candidates[drug][0] != "curated":
+            del candidates[drug]
 
-    all_candidates = (curated_candidates | gold_candidates | model_candidates) - known_to_cause_it
-
-    # Only suggest candidates that are real, known drugs in SIDER — this
-    # filters out non-drug entities (hormones, chemicals, etc.) that
-    # merely co-occurred with the disease in adverse-event literature.
-    known_drug_candidates = [c for c in all_candidates if is_known_drug_in_sider(c)]
-
-    if not known_drug_candidates:
-        return {"error": f"No verifiable drug alternatives found for '{disease_name}'."}
+    verified = {d: v for d, v in candidates.items() if is_known_drug(d)}
+    if not verified:
+        return {"error": f"No verifiable alternative drugs were found for '{disease_name}'.",
+                "candidates_checked": len(candidates)}
 
     scored = []
-    for candidate in known_drug_candidates:
-        effects = get_ranked_side_effects(candidate)
-        if candidate in curated_candidates:
-            source = "curated"
-        elif candidate in gold_candidates:
-            source = "gold"
-        else:
-            source = "model_prediction"
+    for drug, (source, conf) in verified.items():
+        effects = get_ranked_side_effects(drug)
         scored.append({
-            "drug_name": candidate,
-            "side_effect_count": len(effects),
+            "drug_name": drug,
             "source": source,
+            "model_confidence": conf,
+            "side_effect_count": len(effects),
+            "common_side_effect_count": sum(e["severity_bucket"] in ("common", "occasional") for e in effects),
+            "boxed_warning_count": sum(bool(e["boxed_warning"]) for e in effects),
+            "burden_score": side_effect_burden(effects),
+            "top_side_effects": [e["side_effect"] for e in effects[:3]],
         })
+    scored.sort(key=lambda x: (TIERS[x["source"]], x["boxed_warning_count"], x["burden_score"]))
 
-    scored.sort(key=lambda x: x["side_effect_count"])
-
-    return {
-        "disease": disease_name,
-        "candidates_checked": len(known_drug_candidates),
-        "alternatives": scored[:top_n],
-    }
+    return {"disease": disease_name, "candidates_checked": len(candidates), "alternatives": scored[:top_n]}
 
 
 if __name__ == "__main__":
-    result = suggest_alternatives_for_disease("hypotensive", exclude_drug="alpha-methyldopa", top_n=5)
-    if "error" in result:
-        print(f"Error: {result['error']}")
+    res = suggest_alternatives_for_disease("hypertension", exclude_drug="alpha-methyldopa")
+    if "error" in res:
+        print("Error:", res["error"])
     else:
-        print(f"Alternatives for treating: {result['disease']}")
-        for alt in result["alternatives"]:
-            print(f"  {alt['drug_name']:<30} side_effects={alt['side_effect_count']} source={alt['source']}")
+        for a in res["alternatives"]:
+            print(f"  {a['drug_name']:<25} {a['source']:<17} burden={a['burden_score']:<7} "
+                  f"boxed={a['boxed_warning_count']} effects={a['side_effect_count']}")
