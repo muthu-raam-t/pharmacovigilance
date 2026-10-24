@@ -1,69 +1,112 @@
+"""ADE Corpus (DRUG-AE.rel) -> unified JSONL.
+
+Fixes in this version:
+  * The offsets in DRUG-AE.rel are relative to the whole abstract, not to the
+    sentence, so they are NOT used. Each drug / effect is located inside its
+    sentence by case-insensitive string matching instead.
+  * DRUG-AE.rel has one line per drug-effect pair, so the same sentence appears
+    several times. All pairs of a sentence are merged into ONE record that
+    carries every drug and effect mention and every relation. This removes
+    duplicate sentences (and therefore train/test leakage) and stops other
+    entities in the sentence from being labelled "O".
+"""
 import os
-from preprocessing_utils import tokenize_with_spans, assign_bio_tags, write_jsonl
+from collections import OrderedDict
+from preprocessing_utils import (tokenize_with_spans, assign_bio_tags, find_all_spans, write_jsonl,
+                                 RAW_DIR as RAW_ROOT, PROCESSED_DIR)
+
+RAW_PATH = str(RAW_ROOT / "ade_corpus" / "DRUG-AE.rel")
+OUT_DIR = str(PROCESSED_DIR)
+
 
 def parse_ade_file(filepath):
-    records_raw = []
+    """Groups DRUG-AE.rel lines by (PMID, sentence)."""
+    groups = OrderedDict()
     with open(filepath, encoding="utf-8") as f:
         for line in f:
-            parts = [p.strip() for p in line.strip().split("|")]
-            if len(parts) == 8:
-                pmid, sentence, effect, eff_start, eff_end, drug, drug_start, drug_end = parts
-                records_raw.append({
-                    "pmid": pmid, "sentence": sentence,
-                    "effect": effect, "eff_start": int(eff_start), "eff_end": int(eff_end),
-                    "drug": drug, "drug_start": int(drug_start), "drug_end": int(drug_end)
-                })
-            elif len(parts) == 4:
-                pmid, sentence, effect, drug = parts
-                eff_start = sentence.find(effect)
-                drug_start = sentence.find(drug)
-                if eff_start == -1 or drug_start == -1:
-                    continue
-                records_raw.append({
-                    "pmid": pmid, "sentence": sentence,
-                    "effect": effect, "eff_start": eff_start, "eff_end": eff_start + len(effect),
-                    "drug": drug, "drug_start": drug_start, "drug_end": drug_start + len(drug)
-                })
-    return records_raw
+            parts = [p.strip() for p in line.rstrip("\n").split("|")]
+            if len(parts) < 4:
+                continue
+            pmid, sentence = parts[0], parts[1]
+            if len(parts) >= 8:
+                effect, drug = parts[2], parts[5]
+            else:
+                effect, drug = parts[2], parts[3]
+            if not sentence or not effect or not drug:
+                continue
+            g = groups.setdefault((pmid, sentence), {"pmid": pmid, "sentence": sentence, "pairs": []})
+            if (drug, effect) not in g["pairs"]:
+                g["pairs"].append((drug, effect))
+    return list(groups.values())
 
-def process_records(records_raw):
-    records = []
-    for i, r in enumerate(records_raw):
-        text = r["sentence"]
-        tokens_with_spans = tokenize_with_spans(text)
+
+def _place(sentence, phrase, taken):
+    """First occurrence of phrase that does not overlap an already placed mention."""
+    for start, end in find_all_spans(sentence, phrase):
+        if all(end <= s or start >= e for s, e in taken):
+            return start, end
+    return None
+
+
+def process_groups(groups):
+    records, unresolved_pairs = [], 0
+    for k, g in enumerate(groups):
+        sentence = g["sentence"]
+        tokens_with_spans = tokenize_with_spans(sentence)
         tokens = [t[0] for t in tokens_with_spans]
 
-        entities_raw = [
-            {"id": "T0", "char_start": r["drug_start"], "char_end": r["drug_end"],
-             "text": r["drug"], "type": "Chemical"},
-            {"id": "T1", "char_start": r["eff_start"], "char_end": r["eff_end"],
-             "text": r["effect"], "type": "Disease"}
-        ]
+        # Place longer phrases first so that nested names resolve sensibly
+        phrases = {}
+        for drug, effect in g["pairs"]:
+            phrases.setdefault(("Chemical", drug.lower()), drug)
+            phrases.setdefault(("Disease", effect.lower()), effect)
 
-        ner_tags, resolved_entities = assign_bio_tags(tokens_with_spans, entities_raw)
+        taken, raw_entities, key_to_id = [], [], {}
+        for (etype, key), surface in sorted(phrases.items(), key=lambda kv: -len(kv[1])):
+            span = _place(sentence, surface, taken)
+            if span is None:
+                continue
+            taken.append(span)
+            ent_id = f"T{len(raw_entities)}"
+            key_to_id[(etype, key)] = ent_id
+            raw_entities.append({
+                "id": ent_id, "text": sentence[span[0]:span[1]], "type": etype,
+                "char_start": span[0], "char_end": span[1], "concept_ids": [],
+            })
 
-        if len(resolved_entities) < 2:
+        ner_tags, resolved = assign_bio_tags(tokens_with_spans, raw_entities)
+        resolved_ids = {e["id"] for e in resolved}
+
+        relations = []
+        for drug, effect in g["pairs"]:
+            a1 = key_to_id.get(("Chemical", drug.lower()))
+            a2 = key_to_id.get(("Disease", effect.lower()))
+            if a1 in resolved_ids and a2 in resolved_ids:
+                relations.append({"type": "ADVERSE", "arg1": a1, "arg2": a2})
+            else:
+                unresolved_pairs += 1
+
+        if not relations:
             continue
-
-        relations = [{"type": "ADVERSE", "arg1": "T0", "arg2": "T1"}]
-
         records.append({
-            "doc_id": f"ADE_{r['pmid']}_{i}",
-            "text": text,
+            "doc_id": f"ADE_{g['pmid']}_{k}",
+            "group_id": g["pmid"],
+            "text": sentence,
             "tokens": tokens,
             "ner_tags": ner_tags,
-            "entities": resolved_entities,
+            "entities": resolved,
             "relations": relations,
-            "source_dataset": "ADE"
+            "source_dataset": "ADE",
         })
-    return records
+    return records, unresolved_pairs
+
 
 if __name__ == "__main__":
-    RAW_PATH = "/workspace/data/raw/ade_corpus/DRUG-AE.rel"
-    OUT_DIR = "/workspace/data/processed"
     os.makedirs(OUT_DIR, exist_ok=True)
-
-    raw = parse_ade_file(RAW_PATH)
-    records = process_records(raw)
+    groups = parse_ade_file(RAW_PATH)
+    n_pairs = sum(len(g["pairs"]) for g in groups)
+    records, unresolved = process_groups(groups)
+    n_rel = sum(len(r["relations"]) for r in records)
+    print(f"Drug-effect pairs read: {n_pairs} in {len(groups)} unique sentences")
+    print(f"Pairs resolved to entity spans: {n_rel} ({n_rel / max(n_pairs, 1):.1%}); unresolved: {unresolved}")
     write_jsonl(records, os.path.join(OUT_DIR, "ade_processed.jsonl"))
-
