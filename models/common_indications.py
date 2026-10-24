@@ -1,47 +1,45 @@
-# A small, manually curated reference of well-established drug-condition
-# treatment relationships, from general public medical knowledge.
-# This exists specifically to compensate for a known limitation: the
-# trained NER/RE models only learned CAUSES/ASSOCIATED relations from
-# adverse-event corpora (BC5CDR/BioRED/ADE), which contain no genuine
-# "TREATS" relation type. Without this reference, common drugs are
-# sometimes misclassified as harmful for the condition they actually treat.
+"""Small, manually curated reference of well-established drug-indication pairs.
+
+The literature models learn TREATS only from BioRED negative-correlation annotations,
+which cover few drugs. This reference guarantees that very common first-line treatments
+are never reported as harmful for the condition they treat.
+
+Matching is EXACT after normalisation (lower case, collapsed whitespace) against the
+listed indication names and their synonyms - e.g. "pain" does not match "chest pain".
+"""
+from text_utils import normalize_name
 
 KNOWN_INDICATIONS = {
-    "metformin": ["type 2 diabetes", "diabetes", "type 2 diabetes mellitus"],
-    "atorvastatin": ["high cholesterol", "hypercholesterolemia", "heart disease"],
-    "lisinopril": ["high blood pressure", "hypertension", "heart disease"],
-    "amlodipine": ["high blood pressure", "hypertension", "angina", "chest pain"],
-    "albuterol": ["asthma", "copd", "chronic obstructive pulmonary disease"],
-    "salbutamol": ["asthma", "copd", "chronic obstructive pulmonary disease"],
-    "omeprazole": ["gerd", "gastroesophageal reflux disease", "stomach ulcers", "peptic ulcer"],
-    "levothyroxine": ["hypothyroidism", "low thyroid function"],
-    "sertraline": ["depression", "anxiety", "anxiety disorders"],
-    "amoxicillin": ["pneumonia", "ear infections", "bacterial infection"],
-    "insulin": ["type 1 diabetes", "type 2 diabetes", "diabetes"],
-    "clonidine": ["hypertension", "high blood pressure"],
+    "metformin": ["type 2 diabetes", "type 2 diabetes mellitus", "diabetes", "diabetes mellitus"],
+    "insulin": ["type 1 diabetes", "type 2 diabetes", "diabetes", "diabetes mellitus"],
+    "atorvastatin": ["high cholesterol", "hypercholesterolemia", "hyperlipidemia", "coronary heart disease"],
+    "simvastatin": ["high cholesterol", "hypercholesterolemia", "hyperlipidemia"],
+    "lisinopril": ["high blood pressure", "hypertension", "heart failure"],
+    "amlodipine": ["high blood pressure", "hypertension", "angina", "angina pectoris"],
+    "metoprolol": ["high blood pressure", "hypertension", "heart failure", "angina"],
+    "clonidine": ["high blood pressure", "hypertension"],
+    "furosemide": ["edema", "oedema", "heart failure", "fluid retention"],
+    "warfarin": ["blood clots", "atrial fibrillation", "deep vein thrombosis", "pulmonary embolism"],
+    "albuterol": ["asthma", "copd", "chronic obstructive pulmonary disease", "bronchospasm"],
+    "salbutamol": ["asthma", "copd", "chronic obstructive pulmonary disease", "bronchospasm"],
+    "prednisone": ["inflammation", "asthma", "rheumatoid arthritis", "allergic reactions"],
+    "omeprazole": ["gerd", "gastroesophageal reflux disease", "peptic ulcer", "stomach ulcer"],
+    "levothyroxine": ["hypothyroidism"],
+    "sertraline": ["depression", "major depressive disorder", "anxiety", "anxiety disorder"],
+    "amoxicillin": ["pneumonia", "otitis media", "ear infection", "bacterial infection"],
     "aspirin": ["pain", "headache", "fever", "inflammation"],
-    "ibuprofen": ["pain", "inflammation", "fever"],
-    "paracetamol": ["pain", "fever"],
-    "acetaminophen": ["pain", "fever"],
-    "warfarin": ["blood clots", "atrial fibrillation", "deep vein thrombosis"],
-    "furosemide": ["edema", "heart failure", "fluid retention"],
-    "metoprolol": ["hypertension", "high blood pressure", "heart failure"],
-    "simvastatin": ["high cholesterol", "hypercholesterolemia"],
-    "prednisone": ["inflammation", "asthma", "arthritis", "allergic reactions"],
+    "ibuprofen": ["pain", "headache", "fever", "inflammation"],
+    "paracetamol": ["pain", "headache", "fever"],
+    "acetaminophen": ["pain", "headache", "fever"],
 }
+
+_INDEX = {drug: {normalize_name(c) for c in conds} for drug, conds in KNOWN_INDICATIONS.items()}
 
 
 def is_known_indication(drug_name, disease_name):
-    drug_name = drug_name.strip().lower()
-    disease_name = disease_name.strip().lower()
-    indications = KNOWN_INDICATIONS.get(drug_name, [])
-    return any(disease_name in ind or ind in disease_name for ind in indications)
+    return normalize_name(disease_name) in _INDEX.get(normalize_name(drug_name), set())
 
 
 def get_known_treating_drugs(disease_name):
-    disease_name = disease_name.strip().lower()
-    matches = []
-    for drug, conditions in KNOWN_INDICATIONS.items():
-        if any(disease_name in c or c in disease_name for c in conditions):
-            matches.append(drug)
-    return matches
+    disease = normalize_name(disease_name)
+    return sorted(drug for drug, conds in _INDEX.items() if disease in conds)
