@@ -1,139 +1,135 @@
 import json
+import random
+
 import torch
 from torch.utils.data import Dataset
 
+from pair_utils import candidate_pairs, gold_relation_set, NONE_LABEL
+
 
 class JointNERREDataset(Dataset):
-    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=256, max_pairs_per_example=15):
+    """
+    Training mode : all positive pairs + randomly re-sampled negative pairs (neg_ratio x positives)
+    Evaluation mode: every candidate pair of visible entities (deterministic)
+    Sequences are NOT padded here; collate_fn pads each batch to its own longest sequence.
+    """
+
+    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=256, train=True,
+                 neg_ratio=2.0, max_train_pairs=64, max_eval_pairs=400, seed=42):
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.max_pairs = max_pairs_per_example
+        self.train = train
+        self.neg_ratio = neg_ratio
+        self.max_train_pairs = max_train_pairs
+        self.max_eval_pairs = max_eval_pairs
         self.ner_label2id = label_maps["ner_label2id"]
         self.re_label2id = label_maps["re_label2id"]
+        self.type_pairs = label_maps.get("re_type_pairs")
+        self.rng = random.Random(seed)
 
         with open(jsonl_path, encoding="utf-8") as f:
-            self.records = [json.loads(line) for line in f]
+            self.records = [json.loads(line) for line in f if line.strip()]
+
+        if self.type_pairs is None:
+            types = set()
+            for r in self.records:
+                t = {e["id"]: e["type"] for e in r["entities"]}
+                for rel in r["relations"]:
+                    if rel["arg1"] in t and rel["arg2"] in t:
+                        types.add(tuple(sorted((t[rel["arg1"]], t[rel["arg2"]]))))
+            self.type_pairs = [list(p) for p in types]
 
     def __len__(self):
         return len(self.records)
 
     def __getitem__(self, idx):
         r = self.records[idx]
-        tokens = r["tokens"]
-        ner_tags = r["ner_tags"]
+        tokens, ner_tags = r["tokens"], r["ner_tags"]
 
-        encoding = self.tokenizer(
-            tokens,
-            is_split_into_words=True,
-            truncation=True,
-            max_length=self.max_length,
-            padding="max_length",
-            return_tensors="pt"
-        )
-        input_ids = encoding["input_ids"].squeeze(0)
-        attention_mask = encoding["attention_mask"].squeeze(0)
-        word_ids = encoding.word_ids(batch_index=0)
+        encoding = self.tokenizer(tokens, is_split_into_words=True, truncation=True,
+                                  max_length=self.max_length)
+        word_ids = encoding.word_ids()
 
-        # Find the first subword index for each original word
-        word_first_subword = {}
-        for subword_idx, w_id in enumerate(word_ids):
-            if w_id is not None and w_id not in word_first_subword:
-                word_first_subword[w_id] = subword_idx
+        first_sub, last_sub = {}, {}
+        for sub_idx, w_id in enumerate(word_ids):
+            if w_id is None:
+                continue
+            first_sub.setdefault(w_id, sub_idx)
+            last_sub[w_id] = sub_idx + 1
 
-        num_words = min(len(tokens), self.max_length)
-        first_subword_idx = []
-        word_label_ids = []
-        for w in range(num_words):
-            if w in word_first_subword:
-                first_subword_idx.append(word_first_subword[w])
-                tag = ner_tags[w] if w < len(ner_tags) else "O"
-                word_label_ids.append(self.ner_label2id.get(tag, self.ner_label2id["O"]))
+        # Truncation only removes words from the end, so visible words are 0..n_visible-1
+        n_visible = 0
+        while n_visible in first_sub:
+            n_visible += 1
 
-        actual_words = len(first_subword_idx)
-        pad_len = num_words - actual_words
-        first_subword_idx += [0] * pad_len
-        word_label_ids += [0] * pad_len
-        word_mask = [True] * actual_words + [False] * pad_len
+        word_first = [first_sub[w] for w in range(n_visible)]
+        word_spans = [(first_sub[w], last_sub[w]) for w in range(n_visible)]
+        o_id = self.ner_label2id["O"]
+        word_labels = [self.ner_label2id.get(ner_tags[w], o_id) if w < len(ner_tags) else o_id
+                       for w in range(n_visible)]
 
-        # Map each entity's word-level span to a subword-level span
-        entity_subword_spans = {}
-        for ent in r["entities"]:
-            ws, we = ent["token_start"], ent["token_end"]
-            subword_positions = [
-                i for i, w_id in enumerate(word_ids)
-                if w_id is not None and ws <= w_id < we
-            ]
-            if subword_positions:
-                entity_subword_spans[ent["id"]] = (min(subword_positions), max(subword_positions) + 1)
+        cands = candidate_pairs(r, self.type_pairs, max_word=n_visible)
+        if self.train:
+            pos = [c for c in cands if c[2] != NONE_LABEL]
+            neg = [c for c in cands if c[2] == NONE_LABEL]
+            n_neg = min(len(neg), max(1, int(round(self.neg_ratio * max(len(pos), 1)))))
+            chosen = pos[:self.max_train_pairs] + self.rng.sample(neg, n_neg)
+            chosen = chosen[:self.max_train_pairs]
+        else:
+            chosen = cands[:self.max_eval_pairs]
 
-        # Build candidate pairs: all annotated relations, plus a sample of negatives
-        pairs = []
-        pair_labels = []
-        labeled_pairs = set()
-
-        for rel in r["relations"]:
-            a1, a2 = rel["arg1"], rel["arg2"]
-            if a1 in entity_subword_spans and a2 in entity_subword_spans:
-                s1, e1 = entity_subword_spans[a1]
-                s2, e2 = entity_subword_spans[a2]
-                pairs.append((s1, e1, s2, e2))
-                pair_labels.append(self.re_label2id.get(rel["type"], self.re_label2id["NONE"]))
-                labeled_pairs.add((a1, a2))
-
-        entity_ids = list(entity_subword_spans.keys())
-        for i in range(len(entity_ids)):
-            for j in range(len(entity_ids)):
-                if i == j:
-                    continue
-                a1, a2 = entity_ids[i], entity_ids[j]
-                if (a1, a2) in labeled_pairs:
-                    continue
-                if len(pairs) >= self.max_pairs:
-                    break
-                s1, e1 = entity_subword_spans[a1]
-                s2, e2 = entity_subword_spans[a2]
-                pairs.append((s1, e1, s2, e2))
-                pair_labels.append(self.re_label2id["NONE"])
-
-        pairs = pairs[:self.max_pairs]
-        pair_labels = pair_labels[:self.max_pairs]
+        pairs, pair_labels = [], []
+        for a, b, label in chosen:
+            pairs.append((word_spans[a["token_start"]][0], word_spans[a["token_end"] - 1][1],
+                          word_spans[b["token_start"]][0], word_spans[b["token_end"] - 1][1]))
+            pair_labels.append(self.re_label2id.get(label, self.re_label2id[NONE_LABEL]))
 
         return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "word_first_subword_idx": torch.tensor(first_subword_idx, dtype=torch.long),
-            "word_mask": torch.tensor(word_mask, dtype=torch.bool),
-            "word_labels": torch.tensor(word_label_ids, dtype=torch.long),
+            "input_ids": torch.tensor(encoding["input_ids"], dtype=torch.long),
+            "attention_mask": torch.tensor(encoding["attention_mask"], dtype=torch.long),
+            "word_first_subword_idx": torch.tensor(word_first, dtype=torch.long),
+            "word_labels": torch.tensor(word_labels, dtype=torch.long),
             "pairs": pairs,
             "pair_labels": pair_labels,
+            # extra information used for end-to-end evaluation
+            "tokens": tokens[:n_visible],
+            "word_spans": word_spans,
+            "gold_relations": gold_relation_set(r),
         }
 
 
-def collate_fn(batch):
-    input_ids = torch.stack([b["input_ids"] for b in batch])
-    attention_mask = torch.stack([b["attention_mask"] for b in batch])
+def make_collate_fn(pad_token_id):
+    def collate_fn(batch):
+        bsz = len(batch)
+        max_len = max(b["input_ids"].shape[0] for b in batch)
+        max_words = max(max(b["word_first_subword_idx"].shape[0] for b in batch), 1)
 
-    max_words = max(b["word_mask"].shape[0] for b in batch)
-    word_first_subword_idx = torch.zeros(len(batch), max_words, dtype=torch.long)
-    word_mask = torch.zeros(len(batch), max_words, dtype=torch.bool)
-    word_labels = torch.zeros(len(batch), max_words, dtype=torch.long)
+        input_ids = torch.full((bsz, max_len), pad_token_id, dtype=torch.long)
+        attention_mask = torch.zeros(bsz, max_len, dtype=torch.long)
+        word_first_subword_idx = torch.zeros(bsz, max_words, dtype=torch.long)
+        word_mask = torch.zeros(bsz, max_words, dtype=torch.bool)
+        word_labels = torch.zeros(bsz, max_words, dtype=torch.long)
 
-    for i, b in enumerate(batch):
-        n = b["word_mask"].shape[0]
-        word_first_subword_idx[i, :n] = b["word_first_subword_idx"]
-        word_mask[i, :n] = b["word_mask"]
-        word_labels[i, :n] = b["word_labels"]
+        for i, b in enumerate(batch):
+            n = b["input_ids"].shape[0]
+            input_ids[i, :n] = b["input_ids"]
+            attention_mask[i, :n] = b["attention_mask"]
+            w = b["word_first_subword_idx"].shape[0]
+            word_first_subword_idx[i, :w] = b["word_first_subword_idx"]
+            word_mask[i, :w] = True
+            word_labels[i, :w] = b["word_labels"]
+            if w == 0:  # CRF needs the first time step switched on
+                word_mask[i, 0] = True
 
-    pairs = [b["pairs"] for b in batch]
-    pair_labels = [b["pair_labels"] for b in batch]
+        out = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "word_first_subword_idx": word_first_subword_idx,
+            "word_mask": word_mask,
+            "word_labels": word_labels,
+        }
+        for key in ("pairs", "pair_labels", "tokens", "word_spans", "gold_relations"):
+            out[key] = [b[key] for b in batch]
+        return out
 
-    return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "word_first_subword_idx": word_first_subword_idx,
-        "word_mask": word_mask,
-        "word_labels": word_labels,
-        "pairs": pairs,
-        "pair_labels": pair_labels,
-    }
-
+    return collate_fn
