@@ -9,13 +9,14 @@ from pair_utils import candidate_pairs, gold_relation_set, NONE_LABEL
 
 class JointNERREDataset(Dataset):
     """
-    Training mode : all positive pairs + randomly re-sampled negative pairs (neg_ratio x positives)
-    Evaluation mode: every candidate pair of visible entities (deterministic)
+    Training mode : balanced positive pairs + randomly re-sampled negative pairs (neg_ratio x positives),
+                    with guaranteed negative-pair budget even on multi-mention abstracts.
+    Evaluation mode: every candidate pair of visible entities (deterministic).
     Sequences are NOT padded here; collate_fn pads each batch to its own longest sequence.
     """
 
-    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=256, train=True,
-                 neg_ratio=2.0, max_train_pairs=64, max_eval_pairs=400, seed=42):
+    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=512, train=True,
+                 neg_ratio=2.0, max_train_pairs=96, max_eval_pairs=2000, seed=42):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.train = train
@@ -72,9 +73,21 @@ class JointNERREDataset(Dataset):
         if self.train:
             pos = [c for c in cands if c[2] != NONE_LABEL]
             neg = [c for c in cands if c[2] == NONE_LABEL]
-            n_neg = min(len(neg), max(1, int(round(self.neg_ratio * max(len(pos), 1)))))
-            chosen = pos[:self.max_train_pairs] + self.rng.sample(neg, n_neg)
-            chosen = chosen[:self.max_train_pairs]
+
+            # Reserve budget for both positives and negatives so NONE pairs are never truncated away
+            max_pos = max(1, int(round(self.max_train_pairs / (1.0 + self.neg_ratio))))
+            if len(pos) > max_pos:
+                pos_chosen = self.rng.sample(pos, max_pos)
+            else:
+                pos_chosen = pos
+
+            remaining_budget = max(1, self.max_train_pairs - len(pos_chosen))
+            target_neg = max(1, int(round(self.neg_ratio * max(len(pos_chosen), 1))))
+            n_neg = min(len(neg), remaining_budget, target_neg)
+            neg_chosen = self.rng.sample(neg, n_neg) if n_neg > 0 else []
+
+            chosen = pos_chosen + neg_chosen
+            self.rng.shuffle(chosen)
         else:
             chosen = cands[:self.max_eval_pairs]
 

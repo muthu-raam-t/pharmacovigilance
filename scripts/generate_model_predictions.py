@@ -3,9 +3,10 @@ the model's OWN NER output finds the drugs and diseases, then its RE head classi
 every drug-disease pair. Confident TREATS / CAUSES / ASSOCIATED predictions are
 aggregated per (drug, disease, relation) and saved for the knowledge graph.
 
-By default the backbone with the best end-to-end test F1 (results/model_comparison.csv)
-is used. Each prediction keeps the split it came from, so predictions made on test
-documents (never seen in training) can be told apart.
+Fixes:
+  * Orders each candidate entity pair (first, second) by token reading order before
+    calling model.re_forward(), matching the exact slot order used during training.
+  * Uses max_length=512 so entities in the second half of PubMed abstracts are not dropped.
 """
 import argparse
 import csv
@@ -50,7 +51,7 @@ def main():
     parser.add_argument("--threshold", type=float, default=0.70)
     parser.add_argument("--entity_source", choices=["predicted", "gold"], default="predicted")
     parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--max_length", type=int, default=256)
+    parser.add_argument("--max_length", type=int, default=512)
     args = parser.parse_args()
 
     key, name, backbone = pick_model(args.model_key)
@@ -68,7 +69,7 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(backbone)
     collate = make_collate_fn(tokenizer.pad_token_id or 0)
     model = JointNERREModel(backbone, len(id2ner), len(id2re)).to(device)
-    model.load_state_dict(torch.load(ckpt, map_location=device))
+    model.load_state_dict(torch.load(ckpt, map_location=device), strict=False)
     model.eval()
 
     agg, n_records, n_pairs = {}, 0, 0
@@ -99,7 +100,10 @@ def main():
                     pairs, meta = [], []
                     for c in chems:
                         for d in diss:
-                            pairs.append((ws[c[0]][0], ws[c[1] - 1][1], ws[d[0]][0], ws[d[1] - 1][1]))
+                            # Order by appearance in the text to match training pair construction
+                            first, second = (c, d) if (c[0], c[1]) <= (d[0], d[1]) else (d, c)
+                            pairs.append((ws[first[0]][0], ws[first[1] - 1][1],
+                                          ws[second[0]][0], ws[second[1] - 1][1]))
                             meta.append((ridx, c, d))
                     all_pairs.append(pairs)
                     all_meta.append(meta)

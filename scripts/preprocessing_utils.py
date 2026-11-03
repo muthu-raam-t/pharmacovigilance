@@ -73,27 +73,56 @@ def split_concept_ids(raw):
     return [c for c in ids if c and c not in ("-1", "-")]
 
 
-def expand_concept_relations(resolved_entities, concept_relations):
+def _token_distance(ent_a, ent_b):
+    if ent_a["token_end"] <= ent_b["token_start"]:
+        return ent_b["token_start"] - ent_a["token_end"]
+    if ent_b["token_end"] <= ent_a["token_start"]:
+        return ent_a["token_start"] - ent_b["token_end"]
+    return 0
+
+
+def expand_concept_relations(resolved_entities, concept_relations, max_token_dist=60):
     """
     Converts concept-level relations (concept_a, concept_b, type) into
-    mention-level relations between every pair of mentions of the two concepts.
+    mention-level relations.
+
+    To avoid labelling distant cross-abstract mentions (e.g. a drug in sentence 1
+    and a disease in sentence 10) with no local syntactic link, only mention pairs
+    within `max_token_dist` tokens are linked; if no pair for a concept relation falls
+    within `max_token_dist`, the single closest mention pair in the document is kept
+    so no document-level relation is ever lost.
     """
     mentions_by_concept = {}
+    ent_by_id = {}
     for ent in resolved_entities:
+        ent_by_id[ent["id"]] = ent
         for cid in ent["concept_ids"]:
             mentions_by_concept.setdefault(cid, []).append(ent["id"])
 
     relations, seen = [], set()
     for c1, c2, rel_type in concept_relations:
-        for m1 in mentions_by_concept.get(c1, []):
-            for m2 in mentions_by_concept.get(c2, []):
+        m1_list = mentions_by_concept.get(c1, [])
+        m2_list = mentions_by_concept.get(c2, [])
+        candidate_pairs = []
+        for m1 in m1_list:
+            for m2 in m2_list:
                 if m1 == m2:
                     continue
-                key = (min(m1, m2), max(m1, m2))
-                if key in seen:
-                    continue
-                seen.add(key)
-                relations.append({"type": rel_type, "arg1": m1, "arg2": m2})
+                dist = _token_distance(ent_by_id[m1], ent_by_id[m2])
+                candidate_pairs.append((dist, m1, m2))
+
+        if not candidate_pairs:
+            continue
+
+        close_pairs = [(d, m1, m2) for d, m1, m2 in candidate_pairs if d <= max_token_dist]
+        chosen_pairs = close_pairs if close_pairs else [min(candidate_pairs, key=lambda x: x[0])]
+
+        for _, m1, m2 in chosen_pairs:
+            key = (min(m1, m2), max(m1, m2))
+            if key in seen:
+                continue
+            seen.add(key)
+            relations.append({"type": rel_type, "arg1": m1, "arg2": m2})
     return relations
 
 
