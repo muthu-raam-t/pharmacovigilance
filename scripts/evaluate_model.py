@@ -48,7 +48,7 @@ def main():
     parser.add_argument("--test_path", default=str(cfg.PROCESSED_DIR / "ner_re_test.jsonl"))
     parser.add_argument("--label_maps", default=str(cfg.PROCESSED_DIR / "label_maps.json"))
     parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--max_length", type=int, default=256)
+    parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--output_csv", default=str(cfg.RESULTS_DIR / "model_comparison.csv"))
     parser.add_argument("--no_amp", action="store_true")
     args = parser.parse_args()
@@ -69,7 +69,8 @@ def main():
                         collate_fn=make_collate_fn(tokenizer.pad_token_id or 0))
 
     model = JointNERREModel(args.backbone, len(label_maps["ner_label2id"]), len(label_maps["re_label2id"])).to(device)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+    state_dict = torch.load(args.checkpoint, map_location=device)
+    model.load_state_dict(state_dict, strict=False)
     print(f"Loaded checkpoint: {args.checkpoint}")
 
     m = run_evaluation(model, loader, device, label_maps, use_amp=use_amp, end_to_end=True)
