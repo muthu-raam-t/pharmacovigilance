@@ -1,7 +1,6 @@
-"""Evaluates a trained checkpoint on the test split (NER, RE on gold pairs, end-to-end RE).
+"""Evaluates a trained checkpoint on the test split.
 
-Writes results/metrics_<key>.json and updates the row for this model in
-results/model_comparison.csv (re-running replaces the row instead of duplicating it).
+Outputs clean Accuracy, Precision, Recall, and F1 for both NER and RE.
 """
 import argparse
 import csv
@@ -22,8 +21,7 @@ import pv_config as cfg  # noqa: E402
 
 CSV_COLUMNS = ["model_name", "model_key", "backbone",
                "ner_accuracy", "ner_precision", "ner_recall", "ner_f1",
-               "re_micro_precision", "re_micro_recall", "re_micro_f1", "re_macro_f1",
-               "re_accuracy", "re_weighted_f1",
+               "re_accuracy", "re_precision", "re_recall", "re_f1",
                "e2e_precision", "e2e_recall", "e2e_f1"]
 
 
@@ -47,8 +45,8 @@ def main():
     parser.add_argument("--model_key", default=None, help="Short key, e.g. scibert (defaults to checkpoint folder)")
     parser.add_argument("--test_path", default=str(cfg.PROCESSED_DIR / "ner_re_test.jsonl"))
     parser.add_argument("--label_maps", default=str(cfg.PROCESSED_DIR / "label_maps.json"))
-    parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--max_length", type=int, default=384)
     parser.add_argument("--output_csv", default=str(cfg.RESULTS_DIR / "model_comparison.csv"))
     parser.add_argument("--no_amp", action="store_true")
     args = parser.parse_args()
@@ -77,12 +75,8 @@ def main():
 
     print(f"\n=== {args.model_name} - test set ({len(test_ds)} records) ===")
     print(f"NER  Acc {m['ner_accuracy']:.4f}  P {m['ner_precision']:.4f}  R {m['ner_recall']:.4f}  F1 {m['ner_f1']:.4f}")
-    print(f"RE   (gold entities, {m['re_num_pairs']} pairs)  micro-P {m['re_micro_precision']:.4f}  "
-          f"micro-R {m['re_micro_recall']:.4f}  micro-F1 {m['re_micro_f1']:.4f}  macro-F1 {m['re_macro_f1']:.4f}  "
-          f"Acc {m['re_accuracy']:.4f}")
-    print(f"E2E  (predicted entities, {m['e2e_gold_relations']} gold relations)  P {m['e2e_precision']:.4f}  "
-          f"R {m['e2e_recall']:.4f}  F1 {m['e2e_f1']:.4f}")
-    print("RE per class:", {k: round(v["f1-score"], 4) for k, v in m["re_per_class"].items()})
+    print(f"RE   (gold entities)  Acc {m['re_accuracy']:.4f}  P {m['re_precision']:.4f}  R {m['re_recall']:.4f}  F1 {m['re_f1']:.4f}")
+    print(f"E2E  (predicted entities, {m['e2e_gold_relations']} gold relations)  P {m['e2e_precision']:.4f}  R {m['e2e_recall']:.4f}  F1 {m['e2e_f1']:.4f}")
 
     cfg.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = {"model_name": args.model_name, "model_key": key, "backbone": args.backbone,

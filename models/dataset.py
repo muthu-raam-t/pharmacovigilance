@@ -9,14 +9,13 @@ from pair_utils import candidate_pairs, gold_relation_set, NONE_LABEL
 
 class JointNERREDataset(Dataset):
     """
-    Training mode : balanced positive pairs + randomly re-sampled negative pairs (neg_ratio x positives),
-                    with guaranteed negative-pair budget even on multi-mention abstracts.
-    Evaluation mode: every candidate pair of visible entities (deterministic).
-    Sequences are NOT padded here; collate_fn pads each batch to its own longest sequence.
+    Subword pooling: gathers all subword token representations for each word (mean subword pooling)
+    instead of only the first subword token, preserving full biomedical morphology.
+    Balanced candidate pairs with proximity filtering (max_token_dist=45).
     """
 
-    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=512, train=True,
-                 neg_ratio=2.0, max_train_pairs=96, max_eval_pairs=2000, seed=42):
+    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=384, train=True,
+                 neg_ratio=1.5, max_train_pairs=64, max_eval_pairs=1000, seed=42):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.train = train
@@ -58,7 +57,6 @@ class JointNERREDataset(Dataset):
             first_sub.setdefault(w_id, sub_idx)
             last_sub[w_id] = sub_idx + 1
 
-        # Truncation only removes words from the end, so visible words are 0..n_visible-1
         n_visible = 0
         while n_visible in first_sub:
             n_visible += 1
@@ -69,17 +67,13 @@ class JointNERREDataset(Dataset):
         word_labels = [self.ner_label2id.get(ner_tags[w], o_id) if w < len(ner_tags) else o_id
                        for w in range(n_visible)]
 
-        cands = candidate_pairs(r, self.type_pairs, max_word=n_visible)
+        cands = candidate_pairs(r, self.type_pairs, max_word=n_visible, max_token_dist=45)
         if self.train:
             pos = [c for c in cands if c[2] != NONE_LABEL]
             neg = [c for c in cands if c[2] == NONE_LABEL]
 
-            # Reserve budget for both positives and negatives so NONE pairs are never truncated away
             max_pos = max(1, int(round(self.max_train_pairs / (1.0 + self.neg_ratio))))
-            if len(pos) > max_pos:
-                pos_chosen = self.rng.sample(pos, max_pos)
-            else:
-                pos_chosen = pos
+            pos_chosen = self.rng.sample(pos, max_pos) if len(pos) > max_pos else pos
 
             remaining_budget = max(1, self.max_train_pairs - len(pos_chosen))
             target_neg = max(1, int(round(self.neg_ratio * max(len(pos_chosen), 1))))
@@ -101,10 +95,10 @@ class JointNERREDataset(Dataset):
             "input_ids": torch.tensor(encoding["input_ids"], dtype=torch.long),
             "attention_mask": torch.tensor(encoding["attention_mask"], dtype=torch.long),
             "word_first_subword_idx": torch.tensor(word_first, dtype=torch.long),
+            "word_spans_tensor": torch.tensor(word_spans, dtype=torch.long),
             "word_labels": torch.tensor(word_labels, dtype=torch.long),
             "pairs": pairs,
             "pair_labels": pair_labels,
-            # extra information used for end-to-end evaluation
             "tokens": tokens[:n_visible],
             "word_spans": word_spans,
             "gold_relations": gold_relation_set(r),
@@ -120,6 +114,7 @@ def make_collate_fn(pad_token_id):
         input_ids = torch.full((bsz, max_len), pad_token_id, dtype=torch.long)
         attention_mask = torch.zeros(bsz, max_len, dtype=torch.long)
         word_first_subword_idx = torch.zeros(bsz, max_words, dtype=torch.long)
+        word_spans_sub = torch.zeros(bsz, max_words, 2, dtype=torch.long)
         word_mask = torch.zeros(bsz, max_words, dtype=torch.bool)
         word_labels = torch.zeros(bsz, max_words, dtype=torch.long)
 
@@ -129,15 +124,17 @@ def make_collate_fn(pad_token_id):
             attention_mask[i, :n] = b["attention_mask"]
             w = b["word_first_subword_idx"].shape[0]
             word_first_subword_idx[i, :w] = b["word_first_subword_idx"]
+            word_spans_sub[i, :w] = b["word_spans_tensor"]
             word_mask[i, :w] = True
             word_labels[i, :w] = b["word_labels"]
-            if w == 0:  # CRF needs the first time step switched on
+            if w == 0:
                 word_mask[i, 0] = True
 
         out = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "word_first_subword_idx": word_first_subword_idx,
+            "word_spans_sub": word_spans_sub,
             "word_mask": word_mask,
             "word_labels": word_labels,
         }

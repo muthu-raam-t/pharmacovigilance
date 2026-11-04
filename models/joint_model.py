@@ -7,19 +7,18 @@ from torchcrf import CRF
 
 class JointNERREModel(nn.Module):
     """
-    Shared transformer encoder with two enhanced heads:
-      * NER: LayerNorm + contextual projection over each word's sub-word representation, decoded with a CRF
-      * RE : [ent1 ; ent2 ; ent1 * ent2 ; |ent1 - ent2| ; between_context ; CLS] -> LayerNorm + 2-layer GELU MLP
-             trained with class-weighted Focal / Cross-Entropy loss to handle minority relation classes (TREATS).
+    Shared transformer encoder with:
+      * NER: Mean Subword Pooling across word subwords + LayerNorm + Linear + CRF
+      * RE : [ent1 ; ent2 ; ent1 * ent2 ; |ent1 - ent2| ; between_ctx ; CLS] -> LayerNorm + 2-layer GELU MLP
+             with calibrated cross-entropy loss (no artificial over-penalty on NONE).
     """
 
     def __init__(self, backbone_name, num_ner_labels, num_re_labels, hidden_dropout=0.1,
-                 re_class_weights=None, focal_gamma=1.5):
+                 re_class_weights=None):
         super().__init__()
         self.backbone = AutoModel.from_pretrained(backbone_name)
         hidden_size = self.backbone.config.hidden_size
         self.num_re_labels = num_re_labels
-        self.focal_gamma = focal_gamma
 
         self.dropout = nn.Dropout(hidden_dropout)
         self.ner_proj = nn.Sequential(
@@ -31,7 +30,7 @@ class JointNERREModel(nn.Module):
         self.ner_classifier = nn.Linear(hidden_size, num_ner_labels)
         self.crf = CRF(num_ner_labels, batch_first=True)
 
-        # 6 interaction features: [ent1, ent2, ent1 * ent2, |ent1 - ent2|, between_ctx, cls]
+        # 6 interaction features: [ent1, ent2, ent1*ent2, |ent1-ent2|, between_ctx, cls]
         self.re_classifier = nn.Sequential(
             nn.LayerNorm(hidden_size * 6),
             nn.Linear(hidden_size * 6, hidden_size * 2),
@@ -58,20 +57,31 @@ class JointNERREModel(nn.Module):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         return self.dropout(outputs.last_hidden_state)  # (batch, seq_len, hidden)
 
-    def ner_forward(self, sequence_output, word_first_subword_idx, word_mask, word_labels=None):
+    def ner_forward(self, sequence_output, word_first_subword_idx, word_mask, word_labels=None, word_spans_sub=None):
         """
-        word_first_subword_idx: (batch, max_words) sub-word index of each word's first token
-        word_mask:              (batch, max_words) bool, True where a real word exists
-        word_labels:            (batch, max_words) label ids (training only)
+        Gathers subword representations. If word_spans_sub is provided, pools all subwords
+        for each word; otherwise falls back to first-subword gathering.
         """
         hidden_size = sequence_output.shape[-1]
-        gathered = torch.gather(
-            sequence_output, 1,
-            word_first_subword_idx.unsqueeze(-1).expand(-1, -1, hidden_size)
-        )
+        bsz, max_words = word_first_subword_idx.shape
+
+        if word_spans_sub is not None:
+            # Mean pool across each word's subwords using prefix sums
+            seq_f = sequence_output.float()
+            prefix = torch.cat([torch.zeros_like(seq_f[:, :1]), torch.cumsum(seq_f, dim=1)], dim=1)
+            b_idx = torch.arange(bsz, device=sequence_output.device).unsqueeze(1).expand(-1, max_words)
+            s = word_spans_sub[:, :, 0]
+            e = word_spans_sub[:, :, 1]
+            diff = (e - s).clamp(min=1).unsqueeze(-1)
+            gathered = ((prefix[b_idx, e] - prefix[b_idx, s]) / diff).to(sequence_output.dtype)
+        else:
+            gathered = torch.gather(
+                sequence_output, 1,
+                word_first_subword_idx.unsqueeze(-1).expand(-1, -1, hidden_size)
+            )
+
         emissions = self.ner_classifier(self.ner_proj(gathered))
 
-        # The CRF always runs in float32, also under mixed precision
         with torch.autocast(device_type=emissions.device.type, enabled=False):
             emissions = emissions.float()
             if word_labels is not None:
@@ -81,22 +91,7 @@ class JointNERREModel(nn.Module):
                 return loss, emissions
             return self.crf.decode(emissions, mask=word_mask), emissions
 
-    def _compute_re_loss(self, logits, targets):
-        logits_f32 = logits.float()
-        weight = self.re_class_weights.to(logits_f32.device) if self.re_class_weights is not None else None
-        ce = F.cross_entropy(logits_f32, targets, weight=weight, reduction="none")
-        if self.focal_gamma and self.focal_gamma > 0.0:
-            pt = torch.exp(-F.cross_entropy(logits_f32, targets, reduction="none"))
-            focal_term = (1.0 - pt) ** self.focal_gamma
-            return (focal_term * ce).mean()
-        return ce.mean()
-
     def re_forward(self, sequence_output, pair_spans, re_labels=None):
-        """
-        pair_spans: list (len = batch) of lists of (e1_start, e1_end, e2_start, e2_end) sub-word spans
-        re_labels:  list (len = batch) of lists of label ids (training only)
-        Returns (loss, logits) when re_labels is given, otherwise logits of shape (n_pairs, n_labels).
-        """
         b_idx, s1, e1, s2, e2, targets = [], [], [], [], [], []
         for b, pairs in enumerate(pair_spans):
             for p, (a_s, a_e, c_s, c_e) in enumerate(pairs):
@@ -110,7 +105,6 @@ class JointNERREModel(nn.Module):
             empty = sequence_output.new_zeros((0, self.num_re_labels))
             return (None, empty) if re_labels is not None else empty
 
-        # Span means via prefix sums (float32 to avoid fp16 cancellation)
         seq = sequence_output.float()
         seq_len = seq.shape[1]
         prefix = torch.cat([torch.zeros_like(seq[:, :1]), torch.cumsum(seq, dim=1)], dim=1)
@@ -123,7 +117,6 @@ class JointNERREModel(nn.Module):
         ent1 = (prefix[b_t, e1_t] - prefix[b_t, s1_t]) / (e1_t - s1_t).clamp(min=1).unsqueeze(-1)
         ent2 = (prefix[b_t, e2_t] - prefix[b_t, s2_t]) / (e2_t - s2_t).clamp(min=1).unsqueeze(-1)
 
-        # Local intervening context between the two entity spans (where relation trigger words occur)
         mid_start = torch.minimum(e1_t, e2_t).clamp(0, seq_len)
         mid_end = torch.maximum(s1_t, s2_t).clamp(0, seq_len)
         has_mid = (mid_end > mid_start).unsqueeze(-1)
@@ -141,6 +134,7 @@ class JointNERREModel(nn.Module):
 
         if re_labels is not None:
             target_tensor = torch.tensor(targets, device=device, dtype=torch.long)
-            loss = self._compute_re_loss(logits, target_tensor)
+            weight = self.re_class_weights.to(logits.device) if self.re_class_weights is not None else None
+            loss = F.cross_entropy(logits.float(), target_tensor, weight=weight)
             return loss, logits
         return logits
