@@ -1,0 +1,135 @@
+{
+  "model_name": "SciBERT",
+  "model_key": "scibert",
+  "backbone": "allenai/scibert_scivocab_uncased",
+  "test_records": 629,
+  "ner_accuracy": 0.9672222035549881,
+  "ner_precision": 0.8625845496618013,
+  "ner_recall": 0.8645851917930419,
+  "ner_f1": 0.863583712019959,
+  "ner_per_type": {
+    "CellLine": {
+      "precision": 0.25,
+      "recall": 0.3076923076923077,
+      "f1-score": 0.27586206896551724,
+      "support": 13.0
+    },
+    "Chemical": {
+      "precision": 0.9124579124579124,
+      "recall": 0.9237324243715381,
+      "f1-score": 0.9180605547321617,
+      "support": 2347.0
+    },
+    "Disease": {
+      "precision": 0.8285953177257525,
+      "recall": 0.860616587060356,
+      "f1-score": 0.8443024494142705,
+      "support": 2303.0
+    },
+    "Gene": {
+      "precision": 0.8775862068965518,
+      "recall": 0.7916018662519441,
+      "f1-score": 0.8323793949304987,
+      "support": 643.0
+    },
+    "Organism": {
+      "precision": 0.852112676056338,
+      "recall": 0.587378640776699,
+      "f1-score": 0.6954022988505747,
+      "support": 206.0
+    },
+    "Variant": {
+      "precision": 0.5535714285714286,
+      "recall": 0.6666666666666666,
+      "f1-score": 0.6048780487804878,
+      "support": 93.0
+    },
+    "micro avg": {
+      "precision": 0.8625845496618013,
+      "recall": 0.8645851917930419,
+      "f1-score": 0.863583712019959,
+      "support": 5605.0
+    },
+    "macro avg": {
+      "precision": 0.7123872569513305,
+      "recall": 0.6896147488032519,
+      "f1-score": 0.6951474692789185,
+      "support": 5605.0
+    },
+    "weighted avg": {
+      "precision": 0.8642906373631328,
+      "recall": 0.8645851917930419,
+      "f1-score": 0.8630560843700472,
+      "support": 5605.0
+    }
+  },
+  "re_micro_precision": 0.3436865267433988,
+  "re_micro_recall": 0.7476067746686303,
+  "re_micro_f1": 0.47089517625231914,
+  "re_macro_f1": 0.3557169192367356,
+  "re_weighted_f1": 0.8146319659576639,
+  "re_accuracy": 0.7852431096932044,
+  "re_num_pairs": 41689,
+  "re_per_class": {
+    "NONE": {
+      "precision": 0.9598968968633883,
+      "recall": 0.7908817607634387,
+      "f1-score": 0.867231211250567,
+      "support": 36257.0
+    },
+    "ASSOCIATED": {
+      "precision": 0.27536499722786917,
+      "recall": 0.6255247691015953,
+      "f1-score": 0.38239445656358273,
+      "support": 2382.0
+    },
+    "CAUSES": {
+      "precision": 0.41099434114793854,
+      "recall": 0.9157060518731989,
+      "f1-score": 0.567347394264033,
+      "support": 2776.0
+    },
+    "TREATS": {
+      "precision": 0.1318181818181818,
+      "recall": 0.10583941605839416,
+      "f1-score": 0.11740890688259109,
+      "support": 274.0
+    },
+    "macro avg": {
+      "precision": 0.4445186042643444,
+      "recall": 0.6094879994491567,
+      "f1-score": 0.4835954922401935,
+      "support": 41689.0
+    },
+    "weighted avg": {
+      "precision": 0.8787915202047905,
+      "recall": 0.7852431096932044,
+      "f1-score": 0.8146319659576639,
+      "support": 41689.0
+    }
+  },
+  "e2e_precision": 0.25703335236076,
+  "e2e_recall": 0.5718432510885341,
+  "e2e_f1": 0.3546554149085795,
+  "e2e_gold_relations": 5512,
+  "e2e_per_class": {
+    "ASSOCIATED": {
+      "precision": 0.19033621164798825,
+      "recall": 0.42686444169756904,
+      "f1-score": 0.26327827191867853,
+      "support": 2427
+    },
+    "CAUSES": {
+      "precision": 0.3194338761223558,
+      "recall": 0.7485734664764622,
+      "f1-score": 0.44778666666666667,
+      "support": 2804
+    },
+    "TREATS": {
+      "precision": 0.06827309236947791,
+      "recall": 0.060498220640569395,
+      "f1-score": 0.06415094339622643,
+      "support": 281
+    }
+  }
+}
