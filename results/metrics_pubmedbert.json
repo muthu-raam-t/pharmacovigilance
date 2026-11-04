@@ -1,0 +1,135 @@
+{
+  "model_name": "PubMedBERT",
+  "model_key": "pubmedbert",
+  "backbone": "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext",
+  "test_records": 629,
+  "ner_accuracy": 0.969001090329615,
+  "ner_precision": 0.8682198114885292,
+  "ner_recall": 0.8696116850730317,
+  "ner_f1": 0.8689151908872474,
+  "ner_per_type": {
+    "CellLine": {
+      "precision": 0.4,
+      "recall": 0.46153846153846156,
+      "f1-score": 0.42857142857142855,
+      "support": 13.0
+    },
+    "Chemical": {
+      "precision": 0.9128787878787878,
+      "recall": 0.9218019549511263,
+      "f1-score": 0.9173186720236837,
+      "support": 2353.0
+    },
+    "Disease": {
+      "precision": 0.8297252289758534,
+      "recall": 0.8650173611111112,
+      "f1-score": 0.8470038249043774,
+      "support": 2304.0
+    },
+    "Gene": {
+      "precision": 0.8883248730964467,
+      "recall": 0.8152173913043478,
+      "f1-score": 0.8502024291497975,
+      "support": 644.0
+    },
+    "Organism": {
+      "precision": 0.8928571428571429,
+      "recall": 0.6038647342995169,
+      "f1-score": 0.7204610951008646,
+      "support": 207.0
+    },
+    "Variant": {
+      "precision": 0.6464646464646465,
+      "recall": 0.6881720430107527,
+      "f1-score": 0.6666666666666667,
+      "support": 93.0
+    },
+    "micro avg": {
+      "precision": 0.8682198114885292,
+      "recall": 0.8696116850730317,
+      "f1-score": 0.8689151908872474,
+      "support": 5614.0
+    },
+    "macro avg": {
+      "precision": 0.7617084465454796,
+      "recall": 0.7259353243692194,
+      "f1-score": 0.7383706860694698,
+      "support": 5614.0
+    },
+    "weighted avg": {
+      "precision": 0.8695964685439804,
+      "recall": 0.8696116850730317,
+      "f1-score": 0.8682196094551461,
+      "support": 5614.0
+    }
+  },
+  "re_micro_precision": 0.29922220527680343,
+  "re_micro_recall": 0.719603887768201,
+  "re_micro_f1": 0.4226854095976733,
+  "re_macro_f1": 0.32934142478638817,
+  "re_weighted_f1": 0.7841070793278432,
+  "re_accuracy": 0.7466247589113508,
+  "re_num_pairs": 41997,
+  "re_per_class": {
+    "NONE": {
+      "precision": 0.9497628362704705,
+      "recall": 0.7506567425569177,
+      "f1-score": 0.8385528910082993,
+      "support": 36544.0
+    },
+    "ASSOCIATED": {
+      "precision": 0.22538497433504434,
+      "recall": 0.6057692307692307,
+      "f1-score": 0.3285341797982088,
+      "support": 2392.0
+    },
+    "CAUSES": {
+      "precision": 0.3746936274509804,
+      "recall": 0.8779612347451543,
+      "f1-score": 0.5252308353016963,
+      "support": 2786.0
+    },
+    "TREATS": {
+      "precision": 0.18471337579617833,
+      "recall": 0.10545454545454545,
+      "f1-score": 0.13425925925925927,
+      "support": 275.0
+    },
+    "macro avg": {
+      "precision": 0.4336387034631684,
+      "recall": 0.5849604383814621,
+      "f1-score": 0.45664429134186596,
+      "support": 41997.0
+    },
+    "weighted avg": {
+      "precision": 0.8653462526299469,
+      "recall": 0.7466247589113508,
+      "f1-score": 0.7841070793278432,
+      "support": 41997.0
+    }
+  },
+  "e2e_precision": 0.23337553056817337,
+  "e2e_recall": 0.568577648766328,
+  "e2e_f1": 0.33092233778575575,
+  "e2e_gold_relations": 5512,
+  "e2e_per_class": {
+    "ASSOCIATED": {
+      "precision": 0.1712092731829574,
+      "recall": 0.4503502266172229,
+      "f1-score": 0.24809896720009078,
+      "support": 2427
+    },
+    "CAUSES": {
+      "precision": 0.2943911653589073,
+      "recall": 0.7225392296718973,
+      "f1-score": 0.4183357423084865,
+      "support": 2804
+    },
+    "TREATS": {
+      "precision": 0.09202453987730061,
+      "recall": 0.05338078291814947,
+      "f1-score": 0.06756756756756757,
+      "support": 281
+    }
+  }
+}

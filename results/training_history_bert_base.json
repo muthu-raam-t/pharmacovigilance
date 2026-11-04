@@ -1,0 +1,112 @@
+{
+  "model_name": "BERT-base",
+  "backbone": "bert-base-uncased",
+  "best_epoch": 5,
+  "best_val_score": 0.5415885486720642,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 45.547716776529946,
+      "val_ner_f1": 0.7815437688658905,
+      "val_re_micro_f1": 0.34909246667023613,
+      "val_re_macro_f1": 0.2346797879228711,
+      "val_e2e_f1": 0.22806415223895238,
+      "val_score": 0.3983450439244875,
+      "epoch_minutes": 4.230119450887044
+    },
+    {
+      "epoch": 2,
+      "train_loss": 12.575461912155152,
+      "val_ner_f1": 0.796083508658359,
+      "val_re_micro_f1": 0.3546721734641198,
+      "val_re_macro_f1": 0.26109945329641915,
+      "val_e2e_f1": 0.1977497255762898,
+      "val_score": 0.40240121524879696,
+      "epoch_minutes": 4.22466512521108
+    },
+    {
+      "epoch": 3,
+      "train_loss": 8.571667617559433,
+      "val_ner_f1": 0.8394041160768104,
+      "val_re_micro_f1": 0.47249297868825374,
+      "val_re_macro_f1": 0.3217910975642934,
+      "val_e2e_f1": 0.3317555485431787,
+      "val_score": 0.49136093521813407,
+      "epoch_minutes": 4.231869053840637
+    },
+    {
+      "epoch": 4,
+      "train_loss": 6.080750523365679,
+      "val_ner_f1": 0.8441490292111248,
+      "val_re_micro_f1": 0.4955357142857143,
+      "val_re_macro_f1": 0.4009231578649319,
+      "val_e2e_f1": 0.35768414671112453,
+      "val_score": 0.5245730120182239,
+      "epoch_minutes": 4.210904963811239
+    },
+    {
+      "epoch": 5,
+      "train_loss": 4.471663931165896,
+      "val_ner_f1": 0.8545818466626055,
+      "val_re_micro_f1": 0.5120529005109709,
+      "val_re_macro_f1": 0.42644463086052586,
+      "val_e2e_f1": 0.37327481665415485,
+      "val_score": 0.5415885486720642,
+      "epoch_minutes": 4.148487675189972
+    },
+    {
+      "epoch": 6,
+      "train_loss": 3.493846729622474,
+      "val_ner_f1": 0.8579835569017741,
+      "val_re_micro_f1": 0.4877305288827923,
+      "val_re_macro_f1": 0.4023713631285674,
+      "val_e2e_f1": 0.3435348125478194,
+      "val_score": 0.5229050653652383,
+      "epoch_minutes": 4.207813000679016
+    },
+    {
+      "epoch": 7,
+      "train_loss": 2.9216361556970885,
+      "val_ner_f1": 0.8570682451253482,
+      "val_re_micro_f1": 0.47863592796246784,
+      "val_re_macro_f1": 0.39678571163397,
+      "val_e2e_f1": 0.34118041904396607,
+      "val_score": 0.518417575941438,
+      "epoch_minutes": 4.18959664106369
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.5900179646140526,
+      "val_ner_f1": 0.8569193324061197,
+      "val_re_micro_f1": 0.4938810258593168,
+      "val_re_macro_f1": 0.40673860632374853,
+      "val_e2e_f1": 0.3502397173858188,
+      "val_score": 0.5269446704937509,
+      "epoch_minutes": 4.228746521472931
+    }
+  ],
+  "hyperparameters": {
+    "backbone": "bert-base-uncased",
+    "output_dir": "/workspace/models/checkpoints/bert_base",
+    "model_name": "BERT-base",
+    "train_path": "/workspace/data/processed/ner_re_train.jsonl",
+    "val_path": "/workspace/data/processed/ner_re_val.jsonl",
+    "label_maps": "/workspace/data/processed/label_maps.json",
+    "epochs": 8,
+    "batch_size": 8,
+    "lr": 2e-05,
+    "head_lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "lambda_re": 1.0,
+    "focal_gamma": 1.5,
+    "max_length": 512,
+    "neg_ratio": 2.0,
+    "max_train_pairs": 96,
+    "patience": 3,
+    "seed": 42,
+    "num_workers": 2,
+    "no_amp": false
+  }
+}

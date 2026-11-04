@@ -1,0 +1,112 @@
+{
+  "model_name": "BioBERT",
+  "backbone": "dmis-lab/biobert-base-cased-v1.2",
+  "best_epoch": 7,
+  "best_val_score": 0.5593959820708491,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 41.89515342579948,
+      "val_ner_f1": 0.8519485038274182,
+      "val_re_micro_f1": 0.3529543796644408,
+      "val_re_macro_f1": 0.2258631049307037,
+      "val_e2e_f1": 0.2768072289156626,
+      "val_score": 0.4268933043345563,
+      "epoch_minutes": 4.165847682952881
+    },
+    {
+      "epoch": 2,
+      "train_loss": 10.074468890352854,
+      "val_ner_f1": 0.8378665359797435,
+      "val_re_micro_f1": 0.3232726825670027,
+      "val_re_macro_f1": 0.258312451408327,
+      "val_e2e_f1": 0.20105499019699377,
+      "val_score": 0.40512666503801675,
+      "epoch_minutes": 4.142217675844829
+    },
+    {
+      "epoch": 3,
+      "train_loss": 6.838954825297234,
+      "val_ner_f1": 0.8710270554242187,
+      "val_re_micro_f1": 0.470561797752809,
+      "val_re_macro_f1": 0.35975492231457,
+      "val_e2e_f1": 0.36682530345970804,
+      "val_score": 0.5170422697378264,
+      "epoch_minutes": 4.131837713718414
+    },
+    {
+      "epoch": 4,
+      "train_loss": 4.836731582891846,
+      "val_ner_f1": 0.8736462093862816,
+      "val_re_micro_f1": 0.4627468333425521,
+      "val_re_macro_f1": 0.3934839191662797,
+      "val_e2e_f1": 0.35804052321107976,
+      "val_score": 0.5219793712765484,
+      "epoch_minutes": 4.122826254367828
+    },
+    {
+      "epoch": 5,
+      "train_loss": 3.615121323774968,
+      "val_ner_f1": 0.8915304606240714,
+      "val_re_micro_f1": 0.4847737508042033,
+      "val_re_macro_f1": 0.4025555839601171,
+      "val_e2e_f1": 0.3787554740808636,
+      "val_score": 0.5394038173673138,
+      "epoch_minutes": 4.123655656973521
+    },
+    {
+      "epoch": 6,
+      "train_loss": 2.8177980318813334,
+      "val_ner_f1": 0.8918518518518519,
+      "val_re_micro_f1": 0.4974688884201645,
+      "val_re_macro_f1": 0.4223491314007892,
+      "val_e2e_f1": 0.3849746596442412,
+      "val_score": 0.5491611328292617,
+      "epoch_minutes": 4.182772878805796
+    },
+    {
+      "epoch": 7,
+      "train_loss": 2.3267446820786786,
+      "val_ner_f1": 0.8932412345894903,
+      "val_re_micro_f1": 0.5130930631678016,
+      "val_re_macro_f1": 0.427834815318511,
+      "val_e2e_f1": 0.4034148152075932,
+      "val_score": 0.5593959820708491,
+      "epoch_minutes": 4.159559778372446
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.0418073416739286,
+      "val_ner_f1": 0.8930916732335171,
+      "val_re_micro_f1": 0.5120495246517798,
+      "val_re_macro_f1": 0.4269601449028948,
+      "val_e2e_f1": 0.40118681784465404,
+      "val_score": 0.5583220401582114,
+      "epoch_minutes": 4.167706449826558
+    }
+  ],
+  "hyperparameters": {
+    "backbone": "dmis-lab/biobert-base-cased-v1.2",
+    "output_dir": "/workspace/models/checkpoints/biobert",
+    "model_name": "BioBERT",
+    "train_path": "/workspace/data/processed/ner_re_train.jsonl",
+    "val_path": "/workspace/data/processed/ner_re_val.jsonl",
+    "label_maps": "/workspace/data/processed/label_maps.json",
+    "epochs": 8,
+    "batch_size": 8,
+    "lr": 2e-05,
+    "head_lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "lambda_re": 1.0,
+    "focal_gamma": 1.5,
+    "max_length": 512,
+    "neg_ratio": 2.0,
+    "max_train_pairs": 96,
+    "patience": 3,
+    "seed": 42,
+    "num_workers": 2,
+    "no_amp": false
+  }
+}

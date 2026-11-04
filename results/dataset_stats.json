@@ -15,9 +15,9 @@
       "CellLine": 138
     },
     "relations": {
-      "CAUSES": 52269,
-      "ASSOCIATED": 78210,
-      "TREATS": 5541
+      "CAUSES": 23967,
+      "ASSOCIATED": 25703,
+      "TREATS": 1932
     }
   },
   "val": {
@@ -36,9 +36,9 @@
       "CellLine": 24
     },
     "relations": {
-      "CAUSES": 5850,
-      "ASSOCIATED": 9993,
-      "TREATS": 1024
+      "CAUSES": 2726,
+      "ASSOCIATED": 3336,
+      "TREATS": 310
     }
   },
   "test": {
@@ -57,9 +57,9 @@
       "CellLine": 13
     },
     "relations": {
-      "CAUSES": 5530,
-      "ASSOCIATED": 7077,
-      "TREATS": 934
+      "CAUSES": 2808,
+      "ASSOCIATED": 2427,
+      "TREATS": 281
     }
   }
 }

@@ -1,0 +1,112 @@
+{
+  "model_name": "PubMedBERT",
+  "backbone": "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext",
+  "best_epoch": 6,
+  "best_val_score": 0.5242926505846066,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 47.27447878538616,
+      "val_ner_f1": 0.8518270197787462,
+      "val_re_micro_f1": 0.31251216189920217,
+      "val_re_macro_f1": 0.20262270701681961,
+      "val_e2e_f1": 0.24214242659088953,
+      "val_score": 0.40227607882141436,
+      "epoch_minutes": 3.8252921104431152
+    },
+    {
+      "epoch": 2,
+      "train_loss": 10.009900576869647,
+      "val_ner_f1": 0.848566237459515,
+      "val_re_micro_f1": 0.28450229224851137,
+      "val_re_macro_f1": 0.25309651665723937,
+      "val_e2e_f1": 0.20474733621690053,
+      "val_score": 0.39772809564554157,
+      "epoch_minutes": 3.8020504037539165
+    },
+    {
+      "epoch": 3,
+      "train_loss": 6.756349349483138,
+      "val_ner_f1": 0.8922227970339713,
+      "val_re_micro_f1": 0.40031711980599727,
+      "val_re_macro_f1": 0.3196391199106912,
+      "val_e2e_f1": 0.338072956889111,
+      "val_score": 0.48756299840994266,
+      "epoch_minutes": 3.7891396999359133
+    },
+    {
+      "epoch": 4,
+      "train_loss": 4.928479785945207,
+      "val_ner_f1": 0.8879711800369036,
+      "val_re_micro_f1": 0.35764402472787954,
+      "val_re_macro_f1": 0.30503695270860026,
+      "val_e2e_f1": 0.29401452541948414,
+      "val_score": 0.4611666707232169,
+      "epoch_minutes": 3.791172973314921
+    },
+    {
+      "epoch": 5,
+      "train_loss": 3.6900167063410794,
+      "val_ner_f1": 0.8974752644148755,
+      "val_re_micro_f1": 0.43275732531930877,
+      "val_re_macro_f1": 0.3645460587799572,
+      "val_e2e_f1": 0.3690323901141074,
+      "val_score": 0.5159527596570622,
+      "epoch_minutes": 3.7932955026626587
+    },
+    {
+      "epoch": 6,
+      "train_loss": 3.0215528326079486,
+      "val_ner_f1": 0.9005145797598627,
+      "val_re_micro_f1": 0.43297599848211743,
+      "val_re_macro_f1": 0.3982794141713009,
+      "val_e2e_f1": 0.3654006099251455,
+      "val_score": 0.5242926505846066,
+      "epoch_minutes": 3.856657560666402
+    },
+    {
+      "epoch": 7,
+      "train_loss": 2.5805025711226914,
+      "val_ner_f1": 0.9003949854027132,
+      "val_re_micro_f1": 0.42762916819347746,
+      "val_re_macro_f1": 0.3765590107039354,
+      "val_e2e_f1": 0.35515431824246196,
+      "val_score": 0.5149343706356471,
+      "epoch_minutes": 3.8825517694155374
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.303656771639362,
+      "val_ner_f1": 0.9018494623655913,
+      "val_re_micro_f1": 0.4246619006420473,
+      "val_re_macro_f1": 0.3759348397844011,
+      "val_e2e_f1": 0.3553154440326829,
+      "val_score": 0.5144404117061807,
+      "epoch_minutes": 3.8932143966356914
+    }
+  ],
+  "hyperparameters": {
+    "backbone": "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext",
+    "output_dir": "/workspace/models/checkpoints/pubmedbert",
+    "model_name": "PubMedBERT",
+    "train_path": "/workspace/data/processed/ner_re_train.jsonl",
+    "val_path": "/workspace/data/processed/ner_re_val.jsonl",
+    "label_maps": "/workspace/data/processed/label_maps.json",
+    "epochs": 8,
+    "batch_size": 8,
+    "lr": 2e-05,
+    "head_lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "lambda_re": 1.0,
+    "focal_gamma": 1.5,
+    "max_length": 512,
+    "neg_ratio": 2.0,
+    "max_train_pairs": 96,
+    "patience": 3,
+    "seed": 42,
+    "num_workers": 2,
+    "no_amp": false
+  }
+}

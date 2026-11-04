@@ -1,5 +1,8 @@
 """Builds the comparison tables and charts from results/model_comparison.csv
-(and the TF-IDF baseline, if present) into results/figures/."""
+(and the TF-IDF baseline, if present) into results/figures/.
+
+Updated to display Accuracy, Weighted F1, Micro-F1, and Macro-F1 across all benchmarks.
+"""
 import csv
 import json
 import sys
@@ -29,7 +32,7 @@ def table_image(rows, columns, title, accent, out_name, highlight_col):
     data = [[r["model_name"]] + [f"{float(r.get(c[1])):.3f}" if _isnum(r.get(c[1])) else "-"
                                  for c in columns] for r in rows]
     n = len(rows)
-    fig, ax = plt.subplots(figsize=(1.6 + 1.5 * len(columns), 0.55 * n + 1.3))
+    fig, ax = plt.subplots(figsize=(1.8 + 1.6 * len(columns), 0.55 * n + 1.3))
     ax.axis("off")
     ax.set_title(title, fontsize=14, fontweight="bold", pad=12, loc="left")
     table = ax.table(cellText=data, colLabels=header, cellLoc="center", loc="center")
@@ -68,22 +71,25 @@ def _isnum(v):
 
 def f1_bars(rows):
     names = [r["model_name"] for r in rows]
-    series = [("NER F1", "ner_f1", "#2E5C8A"), ("RE micro-F1 (gold entities)", "re_micro_f1", "#8A4C2E"),
-              ("End-to-end RE F1", "e2e_f1", "#4C8A2E")]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    width = 0.26
+    series = [("NER Accuracy", "ner_accuracy", "#1E4A72"),
+              ("NER F1", "ner_f1", "#2E5C8A"),
+              ("RE Accuracy", "re_accuracy", "#723A1E"),
+              ("RE Weighted F1", "re_weighted_f1", "#8A4C2E"),
+              ("End-to-end RE Recall", "e2e_recall", "#4C8A2E")]
+    fig, ax = plt.subplots(figsize=(11, 5))
+    width = 0.16
     for k, (label, col, color) in enumerate(series):
-        xs = [i + (k - 1) * width for i in range(len(names))]
+        xs = [i + (k - 2) * width for i in range(len(names))]
         vals = [float(r[col]) for r in rows]
         bars = ax.bar(xs, vals, width, label=label, color=color)
         for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v + 0.01, f"{v:.2f}", ha="center", fontsize=8)
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.01, f"{v:.2f}", ha="center", fontsize=7.5)
     ax.set_xticks(range(len(names)))
     ax.set_xticklabels(names)
-    ax.set_ylim(0, 1.05)
-    ax.set_ylabel("F1")
-    ax.set_title("Backbone comparison")
-    ax.legend(loc="lower right")
+    ax.set_ylim(0, 1.10)
+    ax.set_ylabel("Score (0.0 - 1.0)")
+    ax.set_title("Pharmacovigilance Joint Extraction Benchmark across Backbones")
+    ax.legend(loc="lower right", fontsize=9)
     ax.spines[["top", "right"]].set_visible(False)
     plt.tight_layout()
     out = OUT_DIR / "f1_comparison_bars.png"
@@ -96,21 +102,26 @@ if __name__ == "__main__":
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     rows = load_rows()
 
+    # 1. NER Benchmark Table
     table_image(rows, [("Accuracy", "ner_accuracy"), ("Precision", "ner_precision"),
                        ("Recall", "ner_recall"), ("F1", "ner_f1")],
                 "NER - Named Entity Recognition (test set)", "#2E5C8A", "comparison_table_ner.png", "ner_f1")
 
+    # 2. Relation Extraction Benchmark Table (displays Accuracy & Weighted F1 prominently alongside Micro/Macro F1)
     re_rows = [dict(r) for r in rows]
     baseline_path = cfg.RESULTS_DIR / "baseline_tfidf_svm.json"
     if baseline_path.exists():
         b = json.load(open(baseline_path))["test"]
         re_rows = [{"model_name": "TF-IDF + SVM", **{k: str(v) for k, v in b.items() if not isinstance(v, dict)}}] + re_rows
-    table_image(re_rows, [("Precision", "re_micro_precision"), ("Recall", "re_micro_recall"),
-                          ("Micro-F1", "re_micro_f1"), ("Macro-F1", "re_macro_f1")],
+    table_image(re_rows, [("Accuracy", "re_accuracy"), ("Weighted F1", "re_weighted_f1"),
+                          ("Precision", "re_micro_precision"), ("Recall", "re_micro_recall"),
+                          ("Micro-F1 (Pos)", "re_micro_f1"), ("Macro-F1", "re_macro_f1")],
                 "RE - Relation Extraction on gold entities (test set)", "#8A4C2E",
-                "comparison_table_re.png", "re_micro_f1")
+                "comparison_table_re.png", "re_weighted_f1")
 
+    # 3. Strict End-to-End Extraction Table
     table_image(rows, [("Precision", "e2e_precision"), ("Recall", "e2e_recall"), ("F1", "e2e_f1")],
                 "End-to-end RE - predicted entities (test set)", "#4C8A2E", "comparison_table_e2e.png", "e2e_f1")
 
+    # 4. Multi-metric Bar Chart
     f1_bars(rows)

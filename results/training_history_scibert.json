@@ -1,0 +1,112 @@
+{
+  "model_name": "SciBERT",
+  "backbone": "allenai/scibert_scivocab_uncased",
+  "best_epoch": 7,
+  "best_val_score": 0.5632137076427658,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 42.125968082556646,
+      "val_ner_f1": 0.8524953159598024,
+      "val_re_micro_f1": 0.28159499093755147,
+      "val_re_macro_f1": 0.1818539018526887,
+      "val_e2e_f1": 0.22138683142889046,
+      "val_score": 0.38433276004473327,
+      "epoch_minutes": 4.029931449890137
+    },
+    {
+      "epoch": 2,
+      "train_loss": 9.835323684650755,
+      "val_ner_f1": 0.8513906856403622,
+      "val_re_micro_f1": 0.3355799022582809,
+      "val_re_macro_f1": 0.3068360012301454,
+      "val_e2e_f1": 0.23400824225049277,
+      "val_score": 0.43195370784482034,
+      "epoch_minutes": 4.005056436856588
+    },
+    {
+      "epoch": 3,
+      "train_loss": 6.538920865621832,
+      "val_ner_f1": 0.872895912057712,
+      "val_re_micro_f1": 0.4208860759493671,
+      "val_re_macro_f1": 0.33122357476764736,
+      "val_e2e_f1": 0.32717304801485547,
+      "val_score": 0.4880446526973955,
+      "epoch_minutes": 3.9540114601453147
+    },
+    {
+      "epoch": 4,
+      "train_loss": 4.682816695197234,
+      "val_ner_f1": 0.8796782091640434,
+      "val_re_micro_f1": 0.3866716031099593,
+      "val_re_macro_f1": 0.3291100115319428,
+      "val_e2e_f1": 0.3164612152681438,
+      "val_score": 0.4779802597685223,
+      "epoch_minutes": 3.9317078232765197
+    },
+    {
+      "epoch": 5,
+      "train_loss": 3.4435586424100966,
+      "val_ner_f1": 0.8903456495828367,
+      "val_re_micro_f1": 0.4770703846799933,
+      "val_re_macro_f1": 0.4009337941612127,
+      "val_e2e_f1": 0.39392978003384094,
+      "val_score": 0.5405699021144709,
+      "epoch_minutes": 3.9145689884821575
+    },
+    {
+      "epoch": 6,
+      "train_loss": 2.7143023810013096,
+      "val_ner_f1": 0.8956812913196531,
+      "val_re_micro_f1": 0.489671084401996,
+      "val_re_macro_f1": 0.40578348391354657,
+      "val_e2e_f1": 0.4081611623473646,
+      "val_score": 0.5498242554956401,
+      "epoch_minutes": 3.928486673037211
+    },
+    {
+      "epoch": 7,
+      "train_loss": 2.2695971590189616,
+      "val_ner_f1": 0.896563603479459,
+      "val_re_micro_f1": 0.5046271673226252,
+      "val_re_macro_f1": 0.43061686899004686,
+      "val_e2e_f1": 0.4210471907789321,
+      "val_score": 0.5632137076427658,
+      "epoch_minutes": 3.896017638842265
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.001618643469059,
+      "val_ner_f1": 0.8964507236388697,
+      "val_re_micro_f1": 0.5048316873738983,
+      "val_re_macro_f1": 0.4306146530113187,
+      "val_e2e_f1": 0.4199181304730815,
+      "val_score": 0.5629537986242921,
+      "epoch_minutes": 3.8919877648353576
+    }
+  ],
+  "hyperparameters": {
+    "backbone": "allenai/scibert_scivocab_uncased",
+    "output_dir": "/workspace/models/checkpoints/scibert",
+    "model_name": "SciBERT",
+    "train_path": "/workspace/data/processed/ner_re_train.jsonl",
+    "val_path": "/workspace/data/processed/ner_re_val.jsonl",
+    "label_maps": "/workspace/data/processed/label_maps.json",
+    "epochs": 8,
+    "batch_size": 8,
+    "lr": 2e-05,
+    "head_lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "lambda_re": 1.0,
+    "focal_gamma": 1.5,
+    "max_length": 512,
+    "neg_ratio": 2.0,
+    "max_train_pairs": 96,
+    "patience": 3,
+    "seed": 42,
+    "num_workers": 2,
+    "no_amp": false
+  }
+}
