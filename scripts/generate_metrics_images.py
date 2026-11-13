@@ -1,10 +1,10 @@
 """Builds the comparison tables and charts from results/model_comparison.csv
-(and the TF-IDF baseline, if present) into results/figures/.
+into results/figures/, matching the exact columns of Slide 22 and Slide 23 in the PPT:
 
-Clean standardized tables: Model | Accuracy | Precision | Recall | F1
+  * comparison_table_ner.png : Model | Accuracy | Precision | Recall | F1
+  * comparison_table_re.png  : Model | Accuracy | Precision | Recall | F1
 """
 import csv
-import json
 import sys
 from pathlib import Path
 
@@ -18,7 +18,7 @@ import pv_config as cfg  # noqa: E402
 
 CSV_PATH = cfg.RESULTS_DIR / "model_comparison.csv"
 OUT_DIR = cfg.RESULTS_DIR / "figures"
-ORDER = ["TF-IDF + SVM", "BERT-base", "RoBERTa", "SciBERT", "BioBERT", "PubMedBERT"]
+ORDER = ["BERT-base", "RoBERTa", "BioBERT", "SciBERT", "PubMedBERT"]
 
 
 def load_rows():
@@ -27,12 +27,30 @@ def load_rows():
     return sorted(rows, key=lambda r: ORDER.index(r["model_name"]) if r["model_name"] in ORDER else 99)
 
 
+def _get_val(row, primary_key, fallback_key=None):
+    v = row.get(primary_key)
+    if _isnum(v):
+        return float(v)
+    if fallback_key and _isnum(row.get(fallback_key)):
+        return float(row.get(fallback_key))
+    return None
+
+
 def table_image(rows, columns, title, accent, out_name, highlight_col):
     header = ["Model"] + [c[0] for c in columns]
-    data = [[r["model_name"]] + [f"{float(r.get(c[1])):.3f}" if _isnum(r.get(c[1])) else "-"
-                                 for c in columns] for r in rows]
+    data = []
+    vals = []
+    for r in rows:
+        row_cells = [r["model_name"]]
+        for label, key, fb in columns:
+            val = _get_val(r, key, fb)
+            row_cells.append(f"{val:.3f}" if val is not None else "-")
+            if key == highlight_col:
+                vals.append(val if val is not None else -1.0)
+        data.append(row_cells)
+
     n = len(rows)
-    fig, ax = plt.subplots(figsize=(1.8 + 1.6 * len(columns), 0.55 * n + 1.3))
+    fig, ax = plt.subplots(figsize=(1.8 + 1.55 * len(columns), 0.55 * n + 1.3))
     ax.axis("off")
     ax.set_title(title, fontsize=14, fontweight="bold", pad=12, loc="left")
     table = ax.table(cellText=data, colLabels=header, cellLoc="center", loc="center")
@@ -44,9 +62,9 @@ def table_image(rows, columns, title, accent, out_name, highlight_col):
         cell.set_facecolor(accent)
         cell.set_text_props(color="white", fontweight="bold")
         cell.set_edgecolor("white")
+
     hi = 1 + [c[1] for c in columns].index(highlight_col)
-    vals = [float(r.get(highlight_col)) if _isnum(r.get(highlight_col)) else -1 for r in rows]
-    best = vals.index(max(vals))
+    best = vals.index(max(vals)) if vals else -1
     for i in range(n):
         bg = "#F5F5F5" if i % 2 == 0 else "white"
         for c in range(len(header)):
@@ -55,6 +73,7 @@ def table_image(rows, columns, title, accent, out_name, highlight_col):
         if i == best:
             table[i + 1, hi].set_facecolor("#C6E0B4")
             table[i + 1, hi].set_text_props(fontweight="bold")
+
     out = OUT_DIR / out_name
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -71,22 +90,21 @@ def _isnum(v):
 
 def f1_bars(rows):
     names = [r["model_name"] for r in rows]
-    series = [("NER F1", "ner_f1", "#2E5C8A"),
-              ("RE F1", "re_f1", "#8A4C2E"),
-              ("End-to-end RE F1", "e2e_f1", "#4C8A2E")]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    width = 0.26
-    for k, (label, col, color) in enumerate(series):
-        xs = [i + (k - 1) * width for i in range(len(names))]
-        vals = [float(r.get(col, 0.0)) if _isnum(r.get(col)) else 0.0 for r in rows]
+    series = [("NER F1", "ner_f1", None, "#2E5C8A"),
+              ("RE F1", "re_f1", "re_weighted_f1", "#8A4C2E")]
+    fig, ax = plt.subplots(figsize=(9.5, 5))
+    width = 0.32
+    for k, (label, col, fb, color) in enumerate(series):
+        xs = [i + (k - 0.5) * width for i in range(len(names))]
+        vals = [_get_val(r, col, fb) or 0.0 for r in rows]
         bars = ax.bar(xs, vals, width, label=label, color=color)
         for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v + 0.01, f"{v:.3f}", ha="center", fontsize=8)
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.01, f"{v:.3f}", ha="center", fontsize=9, fontweight="bold")
     ax.set_xticks(range(len(names)))
-    ax.set_xticklabels(names)
+    ax.set_xticklabels(names, fontsize=10.5)
     ax.set_ylim(0, 1.08)
     ax.set_ylabel("F1 Score")
-    ax.set_title("Joint Extraction Benchmark across Backbones (Test Set)")
+    ax.set_title("Named Entity Recognition (NER) and Relation Extraction (RE) F1 across Backbones")
     ax.legend(loc="lower right")
     ax.spines[["top", "right"]].set_visible(False)
     plt.tight_layout()
@@ -100,29 +118,27 @@ if __name__ == "__main__":
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     rows = load_rows()
 
-    # 1. Clean NER Benchmark Table
-    table_image(rows, [("Accuracy", "ner_accuracy"), ("Precision", "ner_precision"),
-                       ("Recall", "ner_recall"), ("F1", "ner_f1")],
-                "Named Entity Recognition (NER) Benchmark", "#2E5C8A", "comparison_table_ner.png", "ner_f1")
+    # Slide 22 format: Model | Accuracy | Precision | Recall | F1
+    table_image(rows, [
+        ("Accuracy", "ner_accuracy", None),
+        ("Precision", "ner_precision", None),
+        ("Recall", "ner_recall", None),
+        ("F1", "ner_f1", None),
+    ], "Results: Named Entity Recognition (test set)", "#2E5C8A", "comparison_table_ner.png", "ner_f1")
 
-    # 2. Clean RE Benchmark Table (Model | Accuracy | Precision | Recall | F1)
-    re_rows = [dict(r) for r in rows]
-    baseline_path = cfg.RESULTS_DIR / "baseline_tfidf_svm.json"
-    if baseline_path.exists():
-        b = json.load(open(baseline_path))["test"]
-        re_rows = [{"model_name": "TF-IDF + SVM",
-                    "re_accuracy": str(b.get("re_accuracy", 0.0)),
-                    "re_precision": str(b.get("re_weighted_f1", 0.0)),
-                    "re_recall": str(b.get("re_micro_recall", 0.0)),
-                    "re_f1": str(b.get("re_weighted_f1", 0.0))}] + re_rows
+    # Slide 23 format: Model | Accuracy | Precision | Recall | F1 (5 Transformer models only)
+    table_image(rows, [
+        ("Accuracy", "re_accuracy", None),
+        ("Precision", "re_precision", "re_weighted_f1"),
+        ("Recall", "re_recall", "re_accuracy"),
+        ("F1", "re_f1", "re_weighted_f1"),
+    ], "Results: Relation Extraction (test set)", "#8A4C2E", "comparison_table_re.png", "re_f1")
 
-    table_image(re_rows, [("Accuracy", "re_accuracy"), ("Precision", "re_precision"),
-                          ("Recall", "re_recall"), ("F1", "re_f1")],
-                "Relation Extraction (RE) Benchmark", "#8A4C2E",
-                "comparison_table_re.png", "re_f1")
-
-    # 3. Clean End-to-End Extraction Table
-    table_image(rows, [("Precision", "e2e_precision"), ("Recall", "e2e_recall"), ("F1", "e2e_f1")],
-                "End-to-End Extraction Benchmark (Predicted Entities)", "#4C8A2E", "comparison_table_e2e.png", "e2e_f1")
+    # Optional End-to-End table
+    table_image(rows, [
+        ("Precision", "e2e_precision", None),
+        ("Recall", "e2e_recall", None),
+        ("F1", "e2e_f1", None),
+    ], "Results: End-to-End Extraction (test set)", "#4C8A2E", "comparison_table_e2e.png", "e2e_f1")
 
     f1_bars(rows)

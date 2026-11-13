@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Trains and evaluates backbones with OOM-safe settings (batch_size=4, max_length=384, grad_accum=2).
-# Fits comfortably inside 6GB VRAM for all models including RoBERTa.
+# Trains and evaluates all five backbones with OOM-safe settings (batch_size=4, grad_accum=2, max_length=384).
 set -u
 cd "$(dirname "$0")"
 REPO="${WORKSPACE_DIR:-$(cd .. && pwd)}"
@@ -35,7 +34,7 @@ for KEY in $KEYS; do
     python evaluate_model.py --backbone "$HF_ID" --model_name "$NAME" --model_key "$KEY" \
         --batch_size 4 --max_length 384 \
         --checkpoint "$CKPT_DIR/$KEY/model.pt" > "$LOG_DIR/eval_$KEY.log" 2>&1 \
-        && tail -n 5 "$LOG_DIR/eval_$KEY.log" \
+        && tail -n 6 "$LOG_DIR/eval_$KEY.log" \
         || echo "Evaluation of $NAME FAILED - see $LOG_DIR/eval_$KEY.log"
   else
     echo "Training of $NAME FAILED - see $LOG_DIR/train_$KEY.log (continuing with the next model)"

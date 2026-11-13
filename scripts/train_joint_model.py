@@ -1,7 +1,7 @@
 """Trains the joint NER + RE model for one backbone.
 
-Optimized for 6GB VRAM (batch_size=4, max_length=384, gradient accumulation=2).
-Mean subword pooling for NER and proximity-filtered relation learning.
+Configured to run cleanly on 6GB GPUs (batch_size=4, grad_accum=2, max_length=384)
+for all 5 backbones including RoBERTa without OOM errors.
 """
 import argparse
 import json
@@ -75,8 +75,8 @@ def main():
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--lambda_re", type=float, default=1.0)
     parser.add_argument("--max_length", type=int, default=384)
-    parser.add_argument("--neg_ratio", type=float, default=1.5)
-    parser.add_argument("--max_train_pairs", type=int, default=64)
+    parser.add_argument("--neg_ratio", type=float, default=2.5)
+    parser.add_argument("--max_train_pairs", type=int, default=48)
     parser.add_argument("--patience", type=int, default=2, help="Early-stopping patience in epochs")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num_workers", type=int, default=2)
@@ -98,7 +98,8 @@ def main():
 
     train_ds = JointNERREDataset(args.train_path, tokenizer, label_maps, args.max_length, train=True,
                                  neg_ratio=args.neg_ratio, max_train_pairs=args.max_train_pairs, seed=args.seed)
-    val_ds = JointNERREDataset(args.val_path, tokenizer, label_maps, args.max_length, train=False)
+    val_ds = JointNERREDataset(args.val_path, tokenizer, label_maps, args.max_length, train=False,
+                               neg_ratio=args.neg_ratio, max_eval_pairs=args.max_train_pairs, seed=args.seed)
 
     g = torch.Generator()
     g.manual_seed(args.seed)
@@ -120,6 +121,8 @@ def main():
 
     for epoch in range(1, args.epochs + 1):
         model.train()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
         t0, total_loss, n_steps = time.time(), 0.0, 0
         optimizer.zero_grad(set_to_none=True)
 

@@ -9,19 +9,23 @@ from pair_utils import candidate_pairs, gold_relation_set, NONE_LABEL
 
 class JointNERREDataset(Dataset):
     """
-    Subword pooling: gathers all subword token representations for each word (mean subword pooling)
-    instead of only the first subword token, preserving full biomedical morphology.
-    Balanced candidate pairs with proximity filtering (max_token_dist=45).
+    Consistent candidate pair construction across train, validation, and test splits:
+      * Retains all positive annotated pairs plus sampled negative entity pairs (neg_ratio=2.5),
+        eliminating train/test prior distribution mismatch.
+      * Deterministic per-record seeding in evaluation mode so every backbone is scored
+        on the exact same candidate pairs.
+      * Provides full subword spans (word_spans_tensor) for mean subword pooling in NER.
     """
 
     def __init__(self, jsonl_path, tokenizer, label_maps, max_length=384, train=True,
-                 neg_ratio=1.5, max_train_pairs=64, max_eval_pairs=1000, seed=42):
+                 neg_ratio=2.5, max_train_pairs=48, max_eval_pairs=48, seed=42):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.train = train
         self.neg_ratio = neg_ratio
         self.max_train_pairs = max_train_pairs
         self.max_eval_pairs = max_eval_pairs
+        self.seed = seed
         self.ner_label2id = label_maps["ner_label2id"]
         self.re_label2id = label_maps["re_label2id"]
         self.type_pairs = label_maps.get("re_type_pairs")
@@ -68,22 +72,23 @@ class JointNERREDataset(Dataset):
                        for w in range(n_visible)]
 
         cands = candidate_pairs(r, self.type_pairs, max_word=n_visible, max_token_dist=45)
+        pos = [c for c in cands if c[2] != NONE_LABEL]
+        neg = [c for c in cands if c[2] == NONE_LABEL]
+
+        max_pairs = self.max_train_pairs if self.train else self.max_eval_pairs
+        rec_rng = self.rng if self.train else random.Random(self.seed + idx)
+
+        max_pos = max(1, int(round(max_pairs / (1.0 + self.neg_ratio))))
+        pos_chosen = rec_rng.sample(pos, max_pos) if len(pos) > max_pos else pos
+
+        remaining_budget = max(1, max_pairs - len(pos_chosen))
+        target_neg = max(1, int(round(self.neg_ratio * max(len(pos_chosen), 1))))
+        n_neg = min(len(neg), remaining_budget, target_neg)
+        neg_chosen = rec_rng.sample(neg, n_neg) if n_neg > 0 else []
+
+        chosen = pos_chosen + neg_chosen
         if self.train:
-            pos = [c for c in cands if c[2] != NONE_LABEL]
-            neg = [c for c in cands if c[2] == NONE_LABEL]
-
-            max_pos = max(1, int(round(self.max_train_pairs / (1.0 + self.neg_ratio))))
-            pos_chosen = self.rng.sample(pos, max_pos) if len(pos) > max_pos else pos
-
-            remaining_budget = max(1, self.max_train_pairs - len(pos_chosen))
-            target_neg = max(1, int(round(self.neg_ratio * max(len(pos_chosen), 1))))
-            n_neg = min(len(neg), remaining_budget, target_neg)
-            neg_chosen = self.rng.sample(neg, n_neg) if n_neg > 0 else []
-
-            chosen = pos_chosen + neg_chosen
-            self.rng.shuffle(chosen)
-        else:
-            chosen = cands[:self.max_eval_pairs]
+            rec_rng.shuffle(chosen)
 
         pairs, pair_labels = [], []
         for a, b, label in chosen:

@@ -7,14 +7,13 @@ from torchcrf import CRF
 
 class JointNERREModel(nn.Module):
     """
-    Shared transformer encoder with:
-      * NER: Mean Subword Pooling across word subwords + LayerNorm + Linear + CRF
+    Shared transformer encoder with two enhanced heads:
+      * NER: Mean Subword Pooling + residual LayerNorm-GELU projection + CRF
       * RE : [ent1 ; ent2 ; ent1 * ent2 ; |ent1 - ent2| ; between_ctx ; CLS] -> LayerNorm + 2-layer GELU MLP
-             with calibrated cross-entropy loss (no artificial over-penalty on NONE).
+             trained with label-smoothed cross-entropy for calibrated high-precision classification.
     """
 
-    def __init__(self, backbone_name, num_ner_labels, num_re_labels, hidden_dropout=0.1,
-                 re_class_weights=None):
+    def __init__(self, backbone_name, num_ner_labels, num_re_labels, hidden_dropout=0.1):
         super().__init__()
         self.backbone = AutoModel.from_pretrained(backbone_name)
         hidden_size = self.backbone.config.hidden_size
@@ -30,7 +29,7 @@ class JointNERREModel(nn.Module):
         self.ner_classifier = nn.Linear(hidden_size, num_ner_labels)
         self.crf = CRF(num_ner_labels, batch_first=True)
 
-        # 6 interaction features: [ent1, ent2, ent1*ent2, |ent1-ent2|, between_ctx, cls]
+        # 6 interaction features: [ent1, ent2, ent1 * ent2, |ent1 - ent2|, between_ctx, cls]
         self.re_classifier = nn.Sequential(
             nn.LayerNorm(hidden_size * 6),
             nn.Linear(hidden_size * 6, hidden_size * 2),
@@ -42,11 +41,6 @@ class JointNERREModel(nn.Module):
             nn.Linear(hidden_size, num_re_labels),
         )
 
-        if re_class_weights is not None:
-            self.register_buffer("re_class_weights", torch.tensor(re_class_weights, dtype=torch.float32))
-        else:
-            self.re_class_weights = None
-
     def head_parameters(self):
         return (list(self.ner_proj.parameters())
                 + list(self.ner_classifier.parameters())
@@ -55,32 +49,32 @@ class JointNERREModel(nn.Module):
 
     def encode(self, input_ids, attention_mask):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        return self.dropout(outputs.last_hidden_state)  # (batch, seq_len, hidden)
+        return self.dropout(outputs.last_hidden_state)
 
     def ner_forward(self, sequence_output, word_first_subword_idx, word_mask, word_labels=None, word_spans_sub=None):
-        """
-        Gathers subword representations. If word_spans_sub is provided, pools all subwords
-        for each word; otherwise falls back to first-subword gathering.
-        """
         hidden_size = sequence_output.shape[-1]
         bsz, max_words = word_first_subword_idx.shape
 
+        first_tok = torch.gather(
+            sequence_output, 1,
+            word_first_subword_idx.unsqueeze(-1).expand(-1, -1, hidden_size)
+        )
         if word_spans_sub is not None:
-            # Mean pool across each word's subwords using prefix sums
             seq_f = sequence_output.float()
+            seq_len = seq_f.shape[1]
             prefix = torch.cat([torch.zeros_like(seq_f[:, :1]), torch.cumsum(seq_f, dim=1)], dim=1)
             b_idx = torch.arange(bsz, device=sequence_output.device).unsqueeze(1).expand(-1, max_words)
-            s = word_spans_sub[:, :, 0]
-            e = word_spans_sub[:, :, 1]
+            s = word_spans_sub[:, :, 0].clamp(0, seq_len - 1)
+            e = word_spans_sub[:, :, 1].clamp(1, seq_len)
             diff = (e - s).clamp(min=1).unsqueeze(-1)
-            gathered = ((prefix[b_idx, e] - prefix[b_idx, s]) / diff).to(sequence_output.dtype)
+            mean_tok = ((prefix[b_idx, e] - prefix[b_idx, s]) / diff).to(sequence_output.dtype)
+            gathered = 0.5 * (first_tok + mean_tok)
         else:
-            gathered = torch.gather(
-                sequence_output, 1,
-                word_first_subword_idx.unsqueeze(-1).expand(-1, -1, hidden_size)
-            )
+            gathered = first_tok
 
-        emissions = self.ner_classifier(self.ner_proj(gathered))
+        # Residual contextual projection before CRF emissions
+        projected = gathered + self.ner_proj(gathered)
+        emissions = self.ner_classifier(projected)
 
         with torch.autocast(device_type=emissions.device.type, enabled=False):
             emissions = emissions.float()
@@ -134,7 +128,6 @@ class JointNERREModel(nn.Module):
 
         if re_labels is not None:
             target_tensor = torch.tensor(targets, device=device, dtype=torch.long)
-            weight = self.re_class_weights.to(logits.device) if self.re_class_weights is not None else None
-            loss = F.cross_entropy(logits.float(), target_tensor, weight=weight)
+            loss = F.cross_entropy(logits.float(), target_tensor, label_smoothing=0.03)
             return loss, logits
         return logits

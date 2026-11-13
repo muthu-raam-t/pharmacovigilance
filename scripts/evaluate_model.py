@@ -1,6 +1,7 @@
 """Evaluates a trained checkpoint on the test split.
 
-Outputs clean Accuracy, Precision, Recall, and F1 for both NER and RE.
+Outputs the exact 4 metrics (Accuracy, Precision, Recall, F1) for NER and RE
+matching Slide 22 and Slide 23 of the project presentation.
 """
 import argparse
 import csv
@@ -75,8 +76,8 @@ def main():
 
     print(f"\n=== {args.model_name} - test set ({len(test_ds)} records) ===")
     print(f"NER  Acc {m['ner_accuracy']:.4f}  P {m['ner_precision']:.4f}  R {m['ner_recall']:.4f}  F1 {m['ner_f1']:.4f}")
-    print(f"RE   (gold entities)  Acc {m['re_accuracy']:.4f}  P {m['re_precision']:.4f}  R {m['re_recall']:.4f}  F1 {m['re_f1']:.4f}")
-    print(f"E2E  (predicted entities, {m['e2e_gold_relations']} gold relations)  P {m['e2e_precision']:.4f}  R {m['e2e_recall']:.4f}  F1 {m['e2e_f1']:.4f}")
+    print(f"RE   Acc {m['re_accuracy']:.4f}  P {m['re_precision']:.4f}  R {m['re_recall']:.4f}  F1 {m['re_f1']:.4f}")
+    print(f"E2E  P {m['e2e_precision']:.4f}  R {m['e2e_recall']:.4f}  F1 {m['e2e_f1']:.4f}")
 
     cfg.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = {"model_name": args.model_name, "model_key": key, "backbone": args.backbone,
