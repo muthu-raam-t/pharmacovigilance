@@ -1,9 +1,9 @@
 """Evaluation of the joint NER + RE model.
 
-Headline metrics reported in the paper tables:
-  NER: Accuracy, Precision, Recall, F1 (seqeval entity-level)
-  RE : Accuracy, Precision, Recall, F1 (support-weighted F1 across classes, matching standard literature benchmarks)
-  E2E: Precision, Recall, F1 on predicted entities
+Outputs the exact 4 metrics shown in the presentation slides:
+  * NER: Accuracy, Precision, Recall, F1 (seqeval entity-level)
+  * RE : Accuracy, Precision, Recall, F1 (support-weighted over candidate entity pairs)
+  * E2E: Precision, Recall, F1
 """
 from collections import Counter
 
@@ -37,8 +37,6 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
     model.eval()
     id2ner = {int(k): v for k, v in label_maps["ner_id2label"].items()}
     id2re = {int(k): v for k, v in label_maps["re_id2label"].items()}
-    none_id = label_maps["re_label2id"]["NONE"]
-    positive_ids = sorted(i for i in id2re if i != none_id)
     allowed = {tuple(p) for p in label_maps.get("re_type_pairs", [])}
 
     true_ner, pred_ner = [], []
@@ -90,7 +88,6 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
                                     continue
                                 if [t.lower() for t in toks[sa[0]:sa[1]]] == [t.lower() for t in toks[sb[0]:sb[1]]]:
                                     continue
-                                # Proximity filter during E2E inference (45 tokens)
                                 dist = max(0, sb[0] - sa[1])
                                 if dist > 45:
                                     continue
@@ -122,48 +119,39 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
 
     model.train()
 
-    # Standard NER Metrics
-    ner_p = precision_score(true_ner, pred_ner, zero_division=0)
-    ner_r = recall_score(true_ner, pred_ner, zero_division=0)
-    ner_f = seq_f1_score(true_ner, pred_ner, zero_division=0)
-    ner_acc = accuracy_score([t for s in true_ner for t in s], [t for s in pred_ner for t in s])
-
     metrics = {
-        "ner_accuracy": ner_acc,
-        "ner_precision": ner_p,
-        "ner_recall": ner_r,
-        "ner_f1": ner_f,
+        "ner_accuracy": accuracy_score([t for s in true_ner for t in s], [t for s in pred_ner for t in s]),
+        "ner_precision": precision_score(true_ner, pred_ner, zero_division=0),
+        "ner_recall": recall_score(true_ner, pred_ner, zero_division=0),
+        "ner_f1": seq_f1_score(true_ner, pred_ner, zero_division=0),
         "ner_per_type": seq_report(true_ner, pred_ner, output_dict=True, zero_division=0),
     }
+    metrics["ner_per_type"] = {k: {m: float(v) for m, v in d.items()} for k, d in metrics["ner_per_type"].items()}
 
     if true_re:
-        # Standard Literature RE metrics (support-weighted across all classes)
         w_p, w_r, w_f, _ = precision_recall_fscore_support(true_re, pred_re, average="weighted", zero_division=0)
         re_acc = accuracy_score(true_re, pred_re)
-
-        # Class reports
         names = [id2re[i] for i in sorted(id2re)]
         report = classification_report(true_re, pred_re, labels=sorted(id2re), target_names=names,
                                        output_dict=True, zero_division=0)
-
-        # Standard clean RE metric names
         metrics.update({
             "re_accuracy": re_acc,
             "re_precision": w_p,
             "re_recall": w_r,
             "re_f1": w_f,
-            "re_weighted_f1": w_f,
             "re_num_pairs": len(true_re),
-            "re_per_class": {k: {m: float(v) for m, v in d.items()} for k, d in report.items() if isinstance(d, dict)},
+            "re_per_class": {k: {m: float(v) for m, v in d.items()} for k, d in report.items()
+                             if isinstance(d, dict)},
         })
     else:
         metrics.update({"re_accuracy": 0.0, "re_precision": 0.0, "re_recall": 0.0, "re_f1": 0.0,
-                        "re_weighted_f1": 0.0, "re_num_pairs": 0, "re_per_class": {}})
+                        "re_num_pairs": 0, "re_per_class": {}})
 
     if end_to_end:
         tp, fp, fn = sum(e2e_tp.values()), sum(e2e_fp.values()), sum(e2e_fn.values())
         p, r, f = _prf(tp, fp, fn)
-        metrics.update({"e2e_precision": p, "e2e_recall": r, "e2e_f1": f, "e2e_gold_relations": tp + fn})
+        metrics.update({"e2e_precision": p, "e2e_recall": r, "e2e_f1": f,
+                        "e2e_gold_relations": tp + fn})
 
     for k, v in list(metrics.items()):
         if hasattr(v, "item"):
