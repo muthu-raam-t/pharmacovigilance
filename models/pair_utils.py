@@ -6,11 +6,6 @@ Pairs are UNORDERED (relations in these corpora are not direction-sensitive at
 the mention level), restricted to entity-type combinations that actually carry
 relations in the training data, and pairs of two mentions with identical text
 are skipped (they are the same concept).
-
-Proximity filtering: In biomedical literature, 97%+ of true causal/therapeutic
-relations occur within the same sentence or within 45 tokens. Restricting candidate
-pairs to token_dist <= max_token_dist removes cross-abstract distractor pairs,
-aligning evaluation with standard relation extraction benchmarks.
 """
 
 NONE_LABEL = "NONE"
@@ -44,8 +39,8 @@ def candidate_pairs(record, allowed_type_pairs, max_word=None, max_token_dist=45
     """
     Returns a list of (entity_a, entity_b, label) with entity_a before entity_b in the text.
     max_word: if given, only entities that end at or before this word index are used.
-    max_token_dist: maximum token distance between mentions. Any gold relation in the record
-                    is ALWAYS preserved regardless of distance.
+    max_token_dist: maximum token distance for negative (NONE) candidate pairs; all gold
+                    annotated relations are always retained.
     """
     allowed = {tuple(p) for p in allowed_type_pairs}
     ents = sorted(record["entities"], key=lambda e: (e["token_start"], e["token_end"]))
@@ -64,7 +59,6 @@ def candidate_pairs(record, allowed_type_pairs, max_word=None, max_token_dist=45
                 continue
             key = tuple(sorted((a["id"], b["id"])))
             label = lookup.get(key, NONE_LABEL)
-            # Always keep gold relations; filter negative distractor pairs by proximity
             if label == NONE_LABEL and max_token_dist is not None:
                 if _token_dist(a, b) > max_token_dist:
                     continue
