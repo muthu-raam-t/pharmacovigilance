@@ -4,21 +4,23 @@ import random
 import torch
 from torch.utils.data import Dataset
 
-from pair_utils import candidate_pairs, gold_relation_set, NONE_LABEL
+from pair_utils import candidate_pairs, gold_relation_set, token_distance, distance_bucket, NONE_LABEL
+
+
+def build_entity_type2id(ner_label2id):
+    types = sorted({tag[2:] for tag in ner_label2id if tag != "O" and "-" in tag})
+    mapping = {t: i + 1 for i, t in enumerate(types)}  # 0 reserved for unknown
+    return mapping
 
 
 class JointNERREDataset(Dataset):
     """
-    Consistent candidate pair construction across train, validation, and test splits:
-      * Retains all positive annotated pairs plus sampled negative entity pairs (neg_ratio=2.5),
-        eliminating train/test prior distribution mismatch.
-      * Deterministic per-record seeding in evaluation mode so every backbone is scored
-        on the exact same candidate pairs.
-      * Provides full subword spans (word_spans_tensor) for mean subword pooling in NER.
+    Full-abstract context (max_length=512) with balanced candidate pair sampling,
+    subword span boundaries, entity-type IDs, and token-distance buckets.
     """
 
-    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=384, train=True,
-                 neg_ratio=2.5, max_train_pairs=48, max_eval_pairs=48, seed=42):
+    def __init__(self, jsonl_path, tokenizer, label_maps, max_length=512, train=True,
+                 neg_ratio=2.5, max_train_pairs=64, max_eval_pairs=128, seed=42):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.train = train
@@ -28,6 +30,7 @@ class JointNERREDataset(Dataset):
         self.seed = seed
         self.ner_label2id = label_maps["ner_label2id"]
         self.re_label2id = label_maps["re_label2id"]
+        self.type2id = build_entity_type2id(self.ner_label2id)
         self.type_pairs = label_maps.get("re_type_pairs")
         self.rng = random.Random(seed)
 
@@ -71,7 +74,7 @@ class JointNERREDataset(Dataset):
         word_labels = [self.ner_label2id.get(ner_tags[w], o_id) if w < len(ner_tags) else o_id
                        for w in range(n_visible)]
 
-        cands = candidate_pairs(r, self.type_pairs, max_word=n_visible, max_token_dist=45)
+        cands = candidate_pairs(r, self.type_pairs, max_word=n_visible, max_token_dist=60)
         pos = [c for c in cands if c[2] != NONE_LABEL]
         neg = [c for c in cands if c[2] == NONE_LABEL]
 
@@ -90,11 +93,13 @@ class JointNERREDataset(Dataset):
         if self.train:
             rec_rng.shuffle(chosen)
 
-        pairs, pair_labels = [], []
+        pairs, pair_labels, pair_types, pair_dists = [], [], [], []
         for a, b, label in chosen:
             pairs.append((word_spans[a["token_start"]][0], word_spans[a["token_end"] - 1][1],
                           word_spans[b["token_start"]][0], word_spans[b["token_end"] - 1][1]))
             pair_labels.append(self.re_label2id.get(label, self.re_label2id[NONE_LABEL]))
+            pair_types.append((self.type2id.get(a["type"], 0), self.type2id.get(b["type"], 0)))
+            pair_dists.append(distance_bucket(token_distance(a, b)))
 
         return {
             "input_ids": torch.tensor(encoding["input_ids"], dtype=torch.long),
@@ -104,6 +109,8 @@ class JointNERREDataset(Dataset):
             "word_labels": torch.tensor(word_labels, dtype=torch.long),
             "pairs": pairs,
             "pair_labels": pair_labels,
+            "pair_types": pair_types,
+            "pair_dists": pair_dists,
             "tokens": tokens[:n_visible],
             "word_spans": word_spans,
             "gold_relations": gold_relation_set(r),
@@ -143,7 +150,7 @@ def make_collate_fn(pad_token_id):
             "word_mask": word_mask,
             "word_labels": word_labels,
         }
-        for key in ("pairs", "pair_labels", "tokens", "word_spans", "gold_relations"):
+        for key in ("pairs", "pair_labels", "pair_types", "pair_dists", "tokens", "word_spans", "gold_relations"):
             out[key] = [b[key] for b in batch]
         return out
 
