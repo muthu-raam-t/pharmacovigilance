@@ -12,7 +12,8 @@ from seqeval.metrics import (precision_score, recall_score, f1_score as seq_f1_s
                              classification_report as seq_report)
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report
 
-from pair_utils import type_pair_key
+from dataset import build_entity_type2id
+from pair_utils import type_pair_key, distance_bucket
 
 
 def bio_to_spans(tags):
@@ -37,6 +38,7 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
     model.eval()
     id2ner = {int(k): v for k, v in label_maps["ner_id2label"].items()}
     id2re = {int(k): v for k, v in label_maps["re_id2label"].items()}
+    type2id = build_entity_type2id(label_maps["ner_label2id"])
     allowed = {tuple(p) for p in label_maps.get("re_type_pairs", [])}
 
     true_ner, pred_ner = [], []
@@ -69,18 +71,21 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
                     pred_tag_strs.append(tags)
 
                 if any(len(p) for p in batch["pairs"]):
-                    logits = model.re_forward(seq_out, batch["pairs"], re_labels=None)
+                    logits = model.re_forward(
+                        seq_out, batch["pairs"], re_labels=None,
+                        pair_types=batch.get("pair_types"), pair_dists=batch.get("pair_dists"),
+                    )
                     pred_re.extend(torch.argmax(logits, dim=-1).cpu().tolist())
                     for labels in batch["pair_labels"]:
                         true_re.extend(labels)
 
                 if end_to_end:
-                    e2e_pairs, e2e_meta = [], []
+                    e2e_pairs, e2e_types, e2e_dists, e2e_meta = [], [], [], []
                     for i, tags in enumerate(pred_tag_strs):
                         n_words = len(batch["word_spans"][i])
                         spans = [s for s in bio_to_spans(tags[:n_words])]
                         toks = batch["tokens"][i]
-                        pairs_i, meta_i = [], []
+                        pairs_i, types_i, dists_i, meta_i = [], [], [], []
                         for a in range(len(spans)):
                             for b in range(a + 1, len(spans)):
                                 sa, sb = spans[a], spans[b]
@@ -89,17 +94,24 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
                                 if [t.lower() for t in toks[sa[0]:sa[1]]] == [t.lower() for t in toks[sb[0]:sb[1]]]:
                                     continue
                                 dist = max(0, sb[0] - sa[1])
-                                if dist > 45:
+                                if dist > 60:
                                     continue
                                 ws = batch["word_spans"][i]
                                 pairs_i.append((ws[sa[0]][0], ws[sa[1] - 1][1], ws[sb[0]][0], ws[sb[1] - 1][1]))
+                                types_i.append((type2id.get(sa[2], 0), type2id.get(sb[2], 0)))
+                                dists_i.append(distance_bucket(dist))
                                 meta_i.append((sa, sb))
                         e2e_pairs.append(pairs_i)
+                        e2e_types.append(types_i)
+                        e2e_dists.append(dists_i)
                         e2e_meta.append(meta_i)
 
                     preds_flat = []
                     if any(len(p) for p in e2e_pairs):
-                        logits = model.re_forward(seq_out, e2e_pairs, re_labels=None)
+                        logits = model.re_forward(
+                            seq_out, e2e_pairs, re_labels=None,
+                            pair_types=e2e_types, pair_dists=e2e_dists,
+                        )
                         preds_flat = torch.argmax(logits, dim=-1).cpu().tolist()
 
                     k = 0
