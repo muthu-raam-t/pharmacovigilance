@@ -27,7 +27,7 @@ def entity_text(record, ent):
     return " ".join(record["tokens"][ent["token_start"]:ent["token_end"]]).lower()
 
 
-def _token_dist(a, b):
+def token_distance(a, b):
     if a["token_end"] <= b["token_start"]:
         return b["token_start"] - a["token_end"]
     if b["token_end"] <= a["token_start"]:
@@ -35,12 +35,31 @@ def _token_dist(a, b):
     return 0
 
 
-def candidate_pairs(record, allowed_type_pairs, max_word=None, max_token_dist=45):
+def distance_bucket(dist):
+    """Maps non-negative token distance into 8 discrete buckets (0..7)."""
+    if dist == 0:
+        return 0
+    if dist <= 2:
+        return 1
+    if dist <= 5:
+        return 2
+    if dist <= 10:
+        return 3
+    if dist <= 20:
+        return 4
+    if dist <= 35:
+        return 5
+    if dist <= 60:
+        return 6
+    return 7
+
+
+def candidate_pairs(record, allowed_type_pairs, max_word=None, max_token_dist=60):
     """
     Returns a list of (entity_a, entity_b, label) with entity_a before entity_b in the text.
     max_word: if given, only entities that end at or before this word index are used.
-    max_token_dist: maximum token distance for negative (NONE) candidate pairs; all gold
-                    annotated relations are always retained.
+    max_token_dist: maximum token distance for negative (NONE) candidate pairs (aligned to 60
+                    with preprocessing_utils.py); all gold relations are always retained.
     """
     allowed = {tuple(p) for p in allowed_type_pairs}
     ents = sorted(record["entities"], key=lambda e: (e["token_start"], e["token_end"]))
@@ -60,7 +79,7 @@ def candidate_pairs(record, allowed_type_pairs, max_word=None, max_token_dist=45
             key = tuple(sorted((a["id"], b["id"])))
             label = lookup.get(key, NONE_LABEL)
             if label == NONE_LABEL and max_token_dist is not None:
-                if _token_dist(a, b) > max_token_dist:
+                if token_distance(a, b) > max_token_dist:
                     continue
             pairs.append((a, b, label))
     return pairs
