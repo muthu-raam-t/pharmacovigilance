@@ -1,0 +1,86 @@
+{
+  "model_name": "RoBERTa",
+  "backbone": "roberta-base",
+  "best_epoch": 5,
+  "best_val_score": 0.8404141517702775,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 39.4066120822388,
+      "val_ner_f1": 0.8137689184200811,
+      "val_re_f1": 0.7644249981872756,
+      "val_re_accuracy": 0.7760012664239354,
+      "val_score": 0.7890969583036784,
+      "epoch_minutes": 4.790429679552714
+    },
+    {
+      "epoch": 2,
+      "train_loss": 11.186140557773252,
+      "val_ner_f1": 0.8154213578983283,
+      "val_re_f1": 0.7679485253375289,
+      "val_re_accuracy": 0.7722019946176982,
+      "val_score": 0.7916849416179286,
+      "epoch_minutes": 4.745563439528147
+    },
+    {
+      "epoch": 3,
+      "train_loss": 7.807000430533107,
+      "val_ner_f1": 0.8439464334517628,
+      "val_re_f1": 0.7803843909284639,
+      "val_re_accuracy": 0.7924647775842963,
+      "val_score": 0.8121654121901134,
+      "epoch_minutes": 4.685915172100067
+    },
+    {
+      "epoch": 4,
+      "train_loss": 5.701971959615625,
+      "val_ner_f1": 0.856492027334852,
+      "val_re_f1": 0.802578386587681,
+      "val_re_accuracy": 0.8087699857527307,
+      "val_score": 0.8295352069612665,
+      "epoch_minutes": 4.7176243424415585
+    },
+    {
+      "epoch": 5,
+      "train_loss": 4.479466802667681,
+      "val_ner_f1": 0.8720448900745102,
+      "val_re_f1": 0.8087834134660448,
+      "val_re_accuracy": 0.8143105904701599,
+      "val_score": 0.8404141517702775,
+      "epoch_minutes": 4.733747446537018
+    },
+    {
+      "epoch": 6,
+      "train_loss": 3.816385769389564,
+      "val_ner_f1": 0.868952734012975,
+      "val_re_f1": 0.8072321748258019,
+      "val_re_accuracy": 0.8125692575589679,
+      "val_score": 0.8380924544193884,
+      "epoch_minutes": 4.654365849494934
+    }
+  ],
+  "hyperparameters": {
+    "backbone": "roberta-base",
+    "output_dir": "/workspace/models/checkpoints/roberta",
+    "model_name": "RoBERTa",
+    "train_path": "/workspace/data/processed/ner_re_train.jsonl",
+    "val_path": "/workspace/data/processed/ner_re_val.jsonl",
+    "label_maps": "/workspace/data/processed/label_maps.json",
+    "epochs": 6,
+    "batch_size": 4,
+    "grad_accum": 2,
+    "lr": 2e-05,
+    "head_lr": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "lambda_re": 1.0,
+    "max_length": 384,
+    "neg_ratio": 2.5,
+    "max_train_pairs": 48,
+    "patience": 2,
+    "seed": 42,
+    "num_workers": 2,
+    "no_amp": false
+  }
+}
