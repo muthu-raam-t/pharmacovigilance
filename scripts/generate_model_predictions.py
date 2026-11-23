@@ -4,8 +4,9 @@ every drug-disease pair. Confident TREATS / CAUSES / ASSOCIATED predictions are
 aggregated per (drug, disease, relation) and saved for the knowledge graph.
 
 Fixes:
-  * Orders each candidate entity pair (first, second) by token reading order before
-    calling model.re_forward(), matching the exact slot order used during training.
+  * Passes word_spans_sub to ner_forward() so inference uses the exact same
+    subword pooling as training.
+  * Passes pair_types and pair_dists to re_forward() and orders spans by reading order.
   * Uses max_length=512 so entities in the second half of PubMed abstracts are not dropped.
 """
 import argparse
@@ -20,9 +21,10 @@ from transformers import AutoTokenizer
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "models"))
 import pv_config as cfg  # noqa: E402
-from dataset import JointNERREDataset, make_collate_fn  # noqa: E402
+from dataset import JointNERREDataset, make_collate_fn, build_entity_type2id  # noqa: E402
 from evaluation import bio_to_spans  # noqa: E402
 from joint_model import JointNERREModel  # noqa: E402
+from pair_utils import distance_bucket  # noqa: E402
 from text_utils import normalize_name, token_char_spans, evidence_snippet  # noqa: E402
 
 SPLITS = ["train", "val", "test"]
@@ -50,7 +52,7 @@ def main():
     parser.add_argument("--model_key", default="auto", help="'auto' = best end-to-end F1, or e.g. scibert")
     parser.add_argument("--threshold", type=float, default=0.70)
     parser.add_argument("--entity_source", choices=["predicted", "gold"], default="predicted")
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--max_length", type=int, default=512)
     args = parser.parse_args()
 
@@ -61,6 +63,7 @@ def main():
     label_maps = json.load(open(cfg.PROCESSED_DIR / "label_maps.json"))
     id2ner = {int(k): v for k, v in label_maps["ner_id2label"].items()}
     id2re = {int(k): v for k, v in label_maps["re_id2label"].items()}
+    type2id = build_entity_type2id(label_maps["ner_label2id"])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     try:
@@ -82,10 +85,13 @@ def main():
                 items = [ds[i] for i in idxs]
                 batch = collate(items)
                 seq = model.encode(batch["input_ids"].to(device), batch["attention_mask"].to(device))
-                tags_batch, _ = model.ner_forward(seq, batch["word_first_subword_idx"].to(device),
-                                                  batch["word_mask"].to(device))
+                tags_batch, _ = model.ner_forward(
+                    seq, batch["word_first_subword_idx"].to(device),
+                    batch["word_mask"].to(device),
+                    word_spans_sub=batch["word_spans_sub"].to(device),
+                )
 
-                all_pairs, all_meta = [], []
+                all_pairs, all_types, all_dists, all_meta = [], [], [], []
                 for bi, ridx in enumerate(idxs):
                     record = ds.records[ridx]
                     n_words = len(items[bi]["word_spans"])
@@ -97,21 +103,29 @@ def main():
                     chems = [s for s in spans if s[2] == "Chemical"]
                     diss = [s for s in spans if s[2] == "Disease"]
                     ws = items[bi]["word_spans"]
-                    pairs, meta = [], []
+                    pairs, types, dists, meta = [], [], [], []
                     for c in chems:
                         for d in diss:
-                            # Order by appearance in the text to match training pair construction
                             first, second = (c, d) if (c[0], c[1]) <= (d[0], d[1]) else (d, c)
+                            dist = max(0, second[0] - first[1])
+                            if dist > 60:
+                                continue
                             pairs.append((ws[first[0]][0], ws[first[1] - 1][1],
                                           ws[second[0]][0], ws[second[1] - 1][1]))
+                            types.append((type2id.get(first[2], 0), type2id.get(second[2], 0)))
+                            dists.append(distance_bucket(dist))
                             meta.append((ridx, c, d))
                     all_pairs.append(pairs)
+                    all_types.append(types)
+                    all_dists.append(dists)
                     all_meta.append(meta)
                     n_records += 1
 
                 if not any(all_pairs):
                     continue
-                probs = torch.softmax(model.re_forward(seq, all_pairs).float(), dim=-1)
+                probs = torch.softmax(
+                    model.re_forward(seq, all_pairs, pair_types=all_types, pair_dists=all_dists).float(), dim=-1
+                )
                 conf, pred = probs.max(dim=-1)
                 flat_meta = [m for meta in all_meta for m in meta]
                 n_pairs += len(flat_meta)

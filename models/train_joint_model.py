@@ -1,7 +1,9 @@
 """Trains the joint NER + RE model for one backbone.
 
-Configured to run cleanly on 6GB GPUs (batch_size=4, grad_accum=2, max_length=384)
-for all 5 backbones including RoBERTa without OOM errors.
+Configured with:
+  * token_mean CRF loss + lambda_re=2.5 for balanced NER and RE encoder gradients
+  * gradient checkpointing + batch_size=4 + grad_accum=2 so 512-token abstracts fit in 6GB VRAM
+  * 10 epochs with cosine warmup/decay and early stopping (patience=3)
 """
 import argparse
 import json
@@ -65,7 +67,7 @@ def main():
     parser.add_argument("--train_path", default=str(cfg.PROCESSED_DIR / "ner_re_train.jsonl"))
     parser.add_argument("--val_path", default=str(cfg.PROCESSED_DIR / "ner_re_val.jsonl"))
     parser.add_argument("--label_maps", default=str(cfg.PROCESSED_DIR / "label_maps.json"))
-    parser.add_argument("--epochs", type=int, default=6)
+    parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--grad_accum", type=int, default=2)
     parser.add_argument("--lr", type=float, default=2e-5)
@@ -73,11 +75,12 @@ def main():
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--lambda_re", type=float, default=1.0)
-    parser.add_argument("--max_length", type=int, default=384)
+    parser.add_argument("--lambda_re", type=float, default=2.5)
+    parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--neg_ratio", type=float, default=2.5)
-    parser.add_argument("--max_train_pairs", type=int, default=48)
-    parser.add_argument("--patience", type=int, default=2, help="Early-stopping patience in epochs")
+    parser.add_argument("--max_train_pairs", type=int, default=64)
+    parser.add_argument("--max_eval_pairs", type=int, default=128)
+    parser.add_argument("--patience", type=int, default=3, help="Early-stopping patience in epochs")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num_workers", type=int, default=2)
     parser.add_argument("--no_amp", action="store_true", help="Disable mixed precision")
@@ -86,7 +89,8 @@ def main():
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = device.type == "cuda" and not args.no_amp
-    print(f"Using device: {device} | mixed precision: {use_amp} | batch_size: {args.batch_size} (accum: {args.grad_accum})")
+    print(f"Using device: {device} | AMP: {use_amp} | batch: {args.batch_size}x{args.grad_accum} | "
+          f"max_len: {args.max_length} | lambda_re: {args.lambda_re}")
 
     with open(args.label_maps) as f:
         label_maps = json.load(f)
@@ -99,7 +103,7 @@ def main():
     train_ds = JointNERREDataset(args.train_path, tokenizer, label_maps, args.max_length, train=True,
                                  neg_ratio=args.neg_ratio, max_train_pairs=args.max_train_pairs, seed=args.seed)
     val_ds = JointNERREDataset(args.val_path, tokenizer, label_maps, args.max_length, train=False,
-                               neg_ratio=args.neg_ratio, max_eval_pairs=args.max_train_pairs, seed=args.seed)
+                               neg_ratio=args.neg_ratio, max_eval_pairs=args.max_eval_pairs, seed=args.seed)
 
     g = torch.Generator()
     g.manual_seed(args.seed)
@@ -109,7 +113,7 @@ def main():
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, collate_fn=collate,
                             num_workers=args.num_workers)
 
-    model = JointNERREModel(args.backbone, num_ner, num_re).to(device)
+    model = JointNERREModel(args.backbone, num_ner, num_re, grad_checkpointing=True).to(device)
     optimizer = build_optimizer(model, args.lr, args.head_lr, args.weight_decay)
     total_steps = max(1, (len(train_loader) // args.grad_accum) * args.epochs)
     scheduler = get_cosine_schedule_with_warmup(optimizer, int(args.warmup_ratio * total_steps), total_steps)
@@ -137,7 +141,10 @@ def main():
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
                 seq_out = model.encode(input_ids, attention_mask)
                 ner_loss, _ = model.ner_forward(seq_out, wfs, word_mask, word_labels, word_spans_sub=word_spans_sub)
-                re_loss, _ = model.re_forward(seq_out, batch["pairs"], batch["pair_labels"])
+                re_loss, _ = model.re_forward(
+                    seq_out, batch["pairs"], batch["pair_labels"],
+                    pair_types=batch["pair_types"], pair_dists=batch["pair_dists"],
+                )
                 loss = ner_loss + (args.lambda_re * re_loss if re_loss is not None else 0.0)
                 loss = loss / args.grad_accum
 

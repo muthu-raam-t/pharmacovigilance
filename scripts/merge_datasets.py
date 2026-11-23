@@ -1,13 +1,13 @@
 """Merges the three processed corpora, unifies labels and creates leakage-free splits.
 
 Relation mapping (type-aware):
-  * BC5CDR CID, ADE ADVERSE                    -> CAUSES
+  * BC5CDR CID, ADE ADVERSE                      -> CAUSES
   * BioRED Chemical-Disease Positive_Correlation -> CAUSES   (chemical induces / worsens disease)
   * BioRED Chemical-Disease Negative_Correlation -> TREATS   (chemical treats / prevents disease)
-  * every other BioRED relation                 -> ASSOCIATED
+  * every other BioRED relation                  -> ASSOCIATED
 
-Splitting is done by PubMed id (group_id), so every sentence of an abstract, and
-an abstract that appears in more than one corpus, always lands in one split.
+Deduplicates identical normalized texts and splits by PubMed id (group_id), so zero
+sentences or abstracts leak across train, validation, and test splits.
 """
 import json
 import os
@@ -70,6 +70,20 @@ def normalize_record(record):
     return record
 
 
+def deduplicate_by_text(records):
+    seen, unique, dropped = set(), [], 0
+    for r in records:
+        key = " ".join(r["text"].strip().lower().split())
+        if key in seen:
+            dropped += 1
+            continue
+        seen.add(key)
+        unique.append(r)
+    if dropped:
+        print(f"Deduplicated {dropped} duplicate-text records across corpora")
+    return unique
+
+
 def grouped_split(records):
     by_group = defaultdict(list)
     for r in records:
@@ -113,6 +127,7 @@ if __name__ == "__main__":
         all_records.extend(normalize_record(r) for r in recs)
         print(f"Loaded {len(recs)} records from {fname}")
 
+    all_records = deduplicate_by_text(all_records)
     train, val, test = grouped_split(all_records)
 
     stats = {}
@@ -126,7 +141,7 @@ if __name__ == "__main__":
         print(f"   sources:   {stats[name]['by_source']}")
         print(f"   relations: {stats[name]['relations']}")
 
-    groups = {name: {str(r.get('group_id')) for r in s} for name, s in [("train", train), ("val", val), ("test", test)]}
+    groups = {name: {str(r.get("group_id")) for r in s} for name, s in [("train", train), ("val", val), ("test", test)]}
     overlap = (groups["train"] & groups["val"]) | (groups["train"] & groups["test"]) | (groups["val"] & groups["test"])
     print(f"PubMed ids shared between splits (should be 0): {len(overlap)}")
 

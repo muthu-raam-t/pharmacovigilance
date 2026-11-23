@@ -47,7 +47,9 @@ def main():
     parser.add_argument("--test_path", default=str(cfg.PROCESSED_DIR / "ner_re_test.jsonl"))
     parser.add_argument("--label_maps", default=str(cfg.PROCESSED_DIR / "label_maps.json"))
     parser.add_argument("--batch_size", type=int, default=4)
-    parser.add_argument("--max_length", type=int, default=384)
+    parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--max_eval_pairs", type=int, default=128)
+    parser.add_argument("--neg_ratio", type=float, default=2.5)
     parser.add_argument("--output_csv", default=str(cfg.RESULTS_DIR / "model_comparison.csv"))
     parser.add_argument("--no_amp", action="store_true")
     args = parser.parse_args()
@@ -63,7 +65,8 @@ def main():
     except TypeError:
         tokenizer = AutoTokenizer.from_pretrained(args.backbone)
 
-    test_ds = JointNERREDataset(args.test_path, tokenizer, label_maps, args.max_length, train=False)
+    test_ds = JointNERREDataset(args.test_path, tokenizer, label_maps, args.max_length, train=False,
+                                neg_ratio=args.neg_ratio, max_eval_pairs=args.max_eval_pairs)
     loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False,
                         collate_fn=make_collate_fn(tokenizer.pad_token_id or 0))
 

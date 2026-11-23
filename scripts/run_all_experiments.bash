@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Trains and evaluates all five backbones with OOM-safe settings (batch_size=4, grad_accum=2, max_length=384).
+# Trains and evaluates all five backbones with task-partitioned NER+RE,
+# gradient checkpointing (max_length=512 fits in 6GB VRAM), and balanced loss (lambda_re=2.5).
 set -u
 cd "$(dirname "$0")"
 REPO="${WORKSPACE_DIR:-$(cd .. && pwd)}"
@@ -28,11 +29,11 @@ for KEY in $KEYS; do
   echo "[$(date '+%H:%M:%S')] Training $NAME ($HF_ID)"
   echo "=================================================================="
   if python train_joint_model.py --backbone "$HF_ID" --model_name "$NAME" \
-        --batch_size 4 --grad_accum 2 --max_length 384 \
+        --epochs 10 --patience 3 --batch_size 4 --grad_accum 2 --max_length 512 --lambda_re 2.5 \
         --output_dir "$CKPT_DIR/$KEY" > "$LOG_DIR/train_$KEY.log" 2>&1; then
     echo "[$(date '+%H:%M:%S')] Evaluating $NAME"
     python evaluate_model.py --backbone "$HF_ID" --model_name "$NAME" --model_key "$KEY" \
-        --batch_size 4 --max_length 384 \
+        --batch_size 4 --max_length 512 \
         --checkpoint "$CKPT_DIR/$KEY/model.pt" > "$LOG_DIR/eval_$KEY.log" 2>&1 \
         && tail -n 6 "$LOG_DIR/eval_$KEY.log" \
         || echo "Evaluation of $NAME FAILED - see $LOG_DIR/eval_$KEY.log"

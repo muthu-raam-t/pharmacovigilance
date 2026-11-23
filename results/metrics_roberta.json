@@ -1,0 +1,113 @@
+{
+  "model_name": "RoBERTa",
+  "model_key": "roberta",
+  "backbone": "roberta-base",
+  "test_records": 629,
+  "ner_accuracy": 0.9649802668000071,
+  "ner_precision": 0.8429616087751372,
+  "ner_recall": 0.87,
+  "ner_f1": 0.8562674094707521,
+  "ner_per_type": {
+    "CellLine": {
+      "precision": 0.3125,
+      "recall": 0.38461538461538464,
+      "f1-score": 0.3448275862068966,
+      "support": 13.0
+    },
+    "Chemical": {
+      "precision": 0.9065910082933217,
+      "recall": 0.9247551202137133,
+      "f1-score": 0.9155829843508926,
+      "support": 2246.0
+    },
+    "Disease": {
+      "precision": 0.8157549234135667,
+      "recall": 0.848816029143898,
+      "f1-score": 0.8319571524213345,
+      "support": 2196.0
+    },
+    "Gene": {
+      "precision": 0.7633228840125392,
+      "recall": 0.8440207972270364,
+      "f1-score": 0.8016460905349795,
+      "support": 577.0
+    },
+    "Organism": {
+      "precision": 0.7986111111111112,
+      "recall": 0.6020942408376964,
+      "f1-score": 0.6865671641791045,
+      "support": 191.0
+    },
+    "Variant": {
+      "precision": 0.65625,
+      "recall": 0.8181818181818182,
+      "f1-score": 0.7283236994219653,
+      "support": 77.0
+    },
+    "micro avg": {
+      "precision": 0.8429616087751372,
+      "recall": 0.87,
+      "f1-score": 0.8562674094707521,
+      "support": 5300.0
+    },
+    "macro avg": {
+      "precision": 0.7088383211384232,
+      "recall": 0.7370805650365911,
+      "f1-score": 0.7181507795191955,
+      "support": 5300.0
+    },
+    "weighted avg": {
+      "precision": 0.8443711307057454,
+      "recall": 0.87,
+      "f1-score": 0.8561556784230997,
+      "support": 5300.0
+    }
+  },
+  "re_accuracy": 0.8137697516930023,
+  "re_precision": 0.8037806768079646,
+  "re_recall": 0.8137697516930023,
+  "re_f1": 0.8081244104964787,
+  "re_num_pairs": 6202,
+  "re_per_class": {
+    "NONE": {
+      "precision": 0.8430249212260097,
+      "recall": 0.8344201871278707,
+      "f1-score": 0.8387004844685095,
+      "support": 3527.0
+    },
+    "ASSOCIATED": {
+      "precision": 0.6407407407407407,
+      "recall": 0.5700164744645799,
+      "f1-score": 0.6033129904097646,
+      "support": 607.0
+    },
+    "CAUSES": {
+      "precision": 0.809765085214187,
+      "recall": 0.8772455089820359,
+      "f1-score": 0.8421556886227545,
+      "support": 2004.0
+    },
+    "TREATS": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 64.0
+    },
+    "macro avg": {
+      "precision": 0.5733826867952343,
+      "recall": 0.5704205426436216,
+      "f1-score": 0.5710422908752572,
+      "support": 6202.0
+    },
+    "weighted avg": {
+      "precision": 0.8037806768079646,
+      "recall": 0.8137697516930023,
+      "f1-score": 0.8081244104964787,
+      "support": 6202.0
+    }
+  },
+  "e2e_precision": 0.5284552845528455,
+  "e2e_recall": 0.4009433962264151,
+  "e2e_f1": 0.4559521353414483,
+  "e2e_gold_relations": 5512
+}
