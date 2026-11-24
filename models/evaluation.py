@@ -3,7 +3,7 @@
 Outputs the exact 4 metrics shown in the presentation slides:
   * NER: Accuracy, Precision, Recall, F1 (seqeval entity-level)
   * RE : Accuracy, Precision, Recall, F1 (support-weighted over candidate entity pairs)
-  * E2E: Precision, Recall, F1
+  * E2E: Precision, Recall, F1 (with optional validation-tuned confidence threshold)
 """
 from collections import Counter
 
@@ -34,7 +34,25 @@ def _prf(tp, fp, fn):
     return p, r, f
 
 
-def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_end=True):
+def _score_e2e(e2e_records, id2re, threshold=0.0):
+    tp, fp, fn = Counter(), Counter(), Counter()
+    for meta_i, probs_i, gold in e2e_records:
+        predicted = set()
+        for (sa, sb), (pred_id, conf) in zip(meta_i, probs_i):
+            label = id2re[pred_id]
+            if label != "NONE" and conf >= threshold:
+                first, second = sorted((sa, sb))
+                predicted.add((first, second, label))
+        for rel in predicted:
+            (tp if rel in gold else fp)[rel[2]] += 1
+        for rel in gold - predicted:
+            fn[rel[2]] += 1
+    p, r, f = _prf(sum(tp.values()), sum(fp.values()), sum(fn.values()))
+    return p, r, f, sum(tp.values()) + sum(fn.values())
+
+
+def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_end=True,
+                   e2e_threshold=0.0, tune_e2e_threshold=False):
     model.eval()
     id2ner = {int(k): v for k, v in label_maps["ner_id2label"].items()}
     id2re = {int(k): v for k, v in label_maps["re_id2label"].items()}
@@ -43,7 +61,7 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
 
     true_ner, pred_ner = [], []
     true_re, pred_re = [], []
-    e2e_tp, e2e_fp, e2e_fn = Counter(), Counter(), Counter()
+    e2e_records = []
 
     with torch.no_grad():
         for batch in dataloader:
@@ -106,28 +124,24 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
                         e2e_dists.append(dists_i)
                         e2e_meta.append(meta_i)
 
-                    preds_flat = []
+                    preds_flat, confs_flat = [], []
                     if any(len(p) for p in e2e_pairs):
                         logits = model.re_forward(
                             seq_out, e2e_pairs, re_labels=None,
                             pair_types=e2e_types, pair_dists=e2e_dists,
                         )
-                        preds_flat = torch.argmax(logits, dim=-1).cpu().tolist()
+                        probs = torch.softmax(logits.float(), dim=-1)
+                        confs, preds = probs.max(dim=-1)
+                        preds_flat = preds.cpu().tolist()
+                        confs_flat = confs.cpu().tolist()
 
                     k = 0
                     for i, meta_i in enumerate(e2e_meta):
-                        predicted = set()
-                        for sa, sb in meta_i:
-                            label = id2re[preds_flat[k]]
+                        probs_i = []
+                        for _ in meta_i:
+                            probs_i.append((preds_flat[k], confs_flat[k]))
                             k += 1
-                            if label != "NONE":
-                                first, second = sorted((sa, sb))
-                                predicted.add((first, second, label))
-                        gold = batch["gold_relations"][i]
-                        for rel in predicted:
-                            (e2e_tp if rel in gold else e2e_fp)[rel[2]] += 1
-                        for rel in gold - predicted:
-                            e2e_fn[rel[2]] += 1
+                        e2e_records.append((meta_i, probs_i, batch["gold_relations"][i]))
 
     model.train()
 
@@ -160,10 +174,18 @@ def run_evaluation(model, dataloader, device, label_maps, use_amp=False, end_to_
                         "re_num_pairs": 0, "re_per_class": {}})
 
     if end_to_end:
-        tp, fp, fn = sum(e2e_tp.values()), sum(e2e_fp.values()), sum(e2e_fn.values())
-        p, r, f = _prf(tp, fp, fn)
-        metrics.update({"e2e_precision": p, "e2e_recall": r, "e2e_f1": f,
-                        "e2e_gold_relations": tp + fn})
+        best_th = e2e_threshold
+        if tune_e2e_threshold:
+            best_f = -1.0
+            for th in (0.0, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80):
+                _, _, f_th, _ = _score_e2e(e2e_records, id2re, threshold=th)
+                if f_th > best_f:
+                    best_f, best_th = f_th, th
+        p, r, f, total_gold = _score_e2e(e2e_records, id2re, threshold=best_th)
+        metrics.update({
+            "e2e_precision": p, "e2e_recall": r, "e2e_f1": f,
+            "e2e_gold_relations": total_gold, "e2e_threshold": best_th,
+        })
 
     for k, v in list(metrics.items()):
         if hasattr(v, "item"):
