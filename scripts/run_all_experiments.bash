@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Trains and evaluates all five backbones with task-partitioned NER+RE,
-# gradient checkpointing (max_length=512 fits in 6GB VRAM), and balanced loss (lambda_re=2.5).
+# Trains and evaluates all five backbones with ScalarMix + BiLSTM-CRF + Biaffine RE,
+# gradient checkpointing (max_length=512 fits in 6GB VRAM), and balanced loss (lambda_re=3.0).
 set -u
 cd "$(dirname "$0")"
 REPO="${WORKSPACE_DIR:-$(cd .. && pwd)}"
@@ -29,7 +29,8 @@ for KEY in $KEYS; do
   echo "[$(date '+%H:%M:%S')] Training $NAME ($HF_ID)"
   echo "=================================================================="
   if python train_joint_model.py --backbone "$HF_ID" --model_name "$NAME" \
-        --epochs 10 --patience 3 --batch_size 4 --grad_accum 2 --max_length 512 --lambda_re 2.5 \
+        --epochs 10 --patience 3 --batch_size 4 --grad_accum 2 --max_length 512 \
+        --lr 3e-5 --head_lr 3e-4 --lambda_re 3.0 \
         --output_dir "$CKPT_DIR/$KEY" > "$LOG_DIR/train_$KEY.log" 2>&1; then
     echo "[$(date '+%H:%M:%S')] Evaluating $NAME"
     python evaluate_model.py --backbone "$HF_ID" --model_name "$NAME" --model_key "$KEY" \
