@@ -1,7 +1,7 @@
 """Evaluates a trained checkpoint on the test split.
 
-Outputs the exact 4 metrics (Accuracy, Precision, Recall, F1) for NER and RE
-matching Slide 22 and Slide 23 of the project presentation.
+Loads validation-calibrated E2E threshold (best_threshold.json) if present and
+outputs the exact 4 metrics (Accuracy, Precision, Recall, F1) for NER and RE.
 """
 import argparse
 import csv
@@ -50,13 +50,23 @@ def main():
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--max_eval_pairs", type=int, default=128)
     parser.add_argument("--neg_ratio", type=float, default=2.5)
+    parser.add_argument("--e2e_threshold", type=float, default=None)
     parser.add_argument("--output_csv", default=str(cfg.RESULTS_DIR / "model_comparison.csv"))
     parser.add_argument("--no_amp", action="store_true")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = device.type == "cuda" and not args.no_amp
-    key = args.model_key or Path(args.checkpoint).parent.name
+    ckpt_dir = Path(args.checkpoint).parent
+    key = args.model_key or ckpt_dir.name
+
+    e2e_th = args.e2e_threshold
+    if e2e_th is None:
+        th_file = ckpt_dir / "best_threshold.json"
+        if th_file.exists():
+            e2e_th = float(json.load(open(th_file)).get("e2e_threshold", 0.0))
+        else:
+            e2e_th = 0.0
 
     with open(args.label_maps) as f:
         label_maps = json.load(f)
@@ -73,9 +83,9 @@ def main():
     model = JointNERREModel(args.backbone, len(label_maps["ner_label2id"]), len(label_maps["re_label2id"])).to(device)
     state_dict = torch.load(args.checkpoint, map_location=device)
     model.load_state_dict(state_dict, strict=False)
-    print(f"Loaded checkpoint: {args.checkpoint}")
+    print(f"Loaded checkpoint: {args.checkpoint} (e2e_threshold={e2e_th:.2f})")
 
-    m = run_evaluation(model, loader, device, label_maps, use_amp=use_amp, end_to_end=True)
+    m = run_evaluation(model, loader, device, label_maps, use_amp=use_amp, end_to_end=True, e2e_threshold=e2e_th)
 
     print(f"\n=== {args.model_name} - test set ({len(test_ds)} records) ===")
     print(f"NER  Acc {m['ner_accuracy']:.4f}  P {m['ner_precision']:.4f}  R {m['ner_recall']:.4f}  F1 {m['ner_f1']:.4f}")
