@@ -1,9 +1,11 @@
-"""Trains the joint NER + RE model for one backbone.
+"""Trains the upgraded joint NER + RE model for one backbone.
 
 Configured with:
-  * token_mean CRF loss + lambda_re=2.5 for balanced NER and RE encoder gradients
-  * gradient checkpointing + batch_size=4 + grad_accum=2 so 512-token abstracts fit in 6GB VRAM
-  * 10 epochs with cosine warmup/decay and early stopping (patience=3)
+  * Last-4-layer ScalarMix + Residual BiLSTM-CRF + Biaffine RE scorer
+  * Differential learning rates (lr=3e-5 encoder, head_lr=3e-4 task heads)
+  * token_mean CRF loss + lambda_re=3.0 for balanced NER and RE gradients
+  * Gradient checkpointing + batch_size=4 + grad_accum=2 so 512-token abstracts fit in 6GB VRAM
+  * Validation-tuned E2E confidence threshold saved alongside the best checkpoint
 """
 import argparse
 import json
@@ -70,12 +72,12 @@ def main():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--grad_accum", type=int, default=2)
-    parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--head_lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=3e-5)
+    parser.add_argument("--head_lr", type=float, default=3e-4)
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--warmup_ratio", type=float, default=0.1)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--lambda_re", type=float, default=2.5)
+    parser.add_argument("--lambda_re", type=float, default=3.0)
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--neg_ratio", type=float, default=2.5)
     parser.add_argument("--max_train_pairs", type=int, default=64)
@@ -90,7 +92,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = device.type == "cuda" and not args.no_amp
     print(f"Using device: {device} | AMP: {use_amp} | batch: {args.batch_size}x{args.grad_accum} | "
-          f"max_len: {args.max_length} | lambda_re: {args.lambda_re}")
+          f"max_len: {args.max_length} | lr: {args.lr} | head_lr: {args.head_lr} | lambda_re: {args.lambda_re}")
 
     with open(args.label_maps) as f:
         label_maps = json.load(f)
@@ -121,7 +123,7 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
     ckpt_path = os.path.join(args.output_dir, "model.pt")
-    best_score, best_epoch, bad_epochs, history = -1.0, 0, 0, []
+    best_score, best_epoch, best_e2e_th, bad_epochs, history = -1.0, 0, 0.55, 0, []
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -165,21 +167,25 @@ def main():
                 print(f"Epoch {epoch} step {step}/{len(train_loader)} - loss {(loss.item() * args.grad_accum):.4f} "
                       f"(NER {ner_loss.item():.4f}, RE {re_val:.4f})", flush=True)
 
-        val = run_evaluation(model, val_loader, device, label_maps, use_amp=use_amp, end_to_end=False)
-        score = (val["ner_f1"] + val["re_f1"]) / 2.0
+        val = run_evaluation(model, val_loader, device, label_maps, use_amp=use_amp,
+                             end_to_end=True, tune_e2e_threshold=True)
+        score = (val["ner_f1"] + val["re_f1"] + val["e2e_f1"]) / 3.0
         entry = {"epoch": epoch, "train_loss": total_loss / max(n_steps, 1),
                  "val_ner_f1": val["ner_f1"], "val_re_f1": val["re_f1"],
-                 "val_re_accuracy": val["re_accuracy"], "val_score": score,
+                 "val_re_accuracy": val["re_accuracy"], "val_e2e_f1": val["e2e_f1"],
+                 "val_e2e_threshold": val["e2e_threshold"], "val_score": score,
                  "epoch_minutes": (time.time() - t0) / 60}
         history.append(entry)
         print(f"\n=== Epoch {epoch} === train loss {entry['train_loss']:.4f} | val NER F1 {val['ner_f1']:.4f} | "
-              f"val RE F1 {val['re_f1']:.4f} | val RE Acc {val['re_accuracy']:.4f} | "
+              f"val RE F1 {val['re_f1']:.4f} | val E2E F1 {val['e2e_f1']:.4f} (th={val['e2e_threshold']:.2f}) | "
               f"{entry['epoch_minutes']:.1f} min\n", flush=True)
 
         if score > best_score:
-            best_score, best_epoch, bad_epochs = score, epoch, 0
+            best_score, best_epoch, best_e2e_th, bad_epochs = score, epoch, val["e2e_threshold"], 0
             torch.save(model.state_dict(), ckpt_path)
-            print(f"New best model (epoch {epoch}) saved to {ckpt_path}", flush=True)
+            with open(os.path.join(args.output_dir, "best_threshold.json"), "w") as f:
+                json.dump({"e2e_threshold": best_e2e_th}, f, indent=2)
+            print(f"New best model (epoch {epoch}, th={best_e2e_th:.2f}) saved to {ckpt_path}", flush=True)
         else:
             bad_epochs += 1
             if bad_epochs >= args.patience:
@@ -187,15 +193,15 @@ def main():
                 break
 
     summary = {"model_name": args.model_name or args.backbone, "backbone": args.backbone,
-               "best_epoch": best_epoch, "best_val_score": best_score, "history": history,
-               "hyperparameters": vars(args)}
+               "best_epoch": best_epoch, "best_val_score": best_score, "best_e2e_threshold": best_e2e_th,
+               "history": history, "hyperparameters": vars(args)}
     with open(os.path.join(args.output_dir, "training_history.json"), "w") as f:
         json.dump(summary, f, indent=2)
     cfg.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     key = Path(args.output_dir).name
     with open(cfg.RESULTS_DIR / f"training_history_{key}.json", "w") as f:
         json.dump(summary, f, indent=2)
-    print(f"Best epoch: {best_epoch} (val score {best_score:.4f}). History saved.")
+    print(f"Best epoch: {best_epoch} (val score {best_score:.4f}, e2e_th {best_e2e_th:.2f}). History saved.")
 
 
 if __name__ == "__main__":
